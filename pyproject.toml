@@ -21,6 +21,7 @@ yolo = ["ultralytics>=8.0", "torch>=2.0"]
 
 [project.scripts]
 pool-fool-calibrate = "pool_fool.desktop.calibrate.cli:main"
+pool-fool-annotate = "pool_fool.desktop.annotate.cli:main"
 pool-fool-app = "pool_fool.desktop.app:main"
 pool-fool-edge = "pool_fool.edge.main:main"
 

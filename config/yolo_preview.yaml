@@ -1,0 +1,72 @@
+# Use with: pool-fool-app --config config/yolo_preview.yaml --camera "http://pool.local:8080/stream.mjpg"
+# 3-epoch preview weights — sanity check before 80-epoch training.
+
+table:
+  width_mm: 1270.0
+  length_mm: 2540.0
+  ball_diameter_mm: 57.15
+  ball_radius_mm: 28.575
+
+vision:
+  yolo_model: config/models/pool_billiard_preview.pt
+  yolo_class_ids: all
+  yolo_confidence: 0.30
+  yolo_cue_class_ids: [1]
+  yolo_exclude_class_names: [break]
+  yolo_imgsz: 640
+  yolo_iou: 0.55
+  yolo_max_det: 16
+  yolo_frame_stride: 1
+  yolo_clahe: true
+  yolo_cluster_merge_mm: 55
+  yolo_cue_min_brightness: 140
+  ball_tracker_alpha: 0.12
+  ball_tracker_match_gate_mm: 100.0
+  stationary_velocity_mm_s: 50.0
+  stationary_frames_required: 8
+  stationary_velocity_ema_alpha: 0.2
+  aim_angle_threshold_deg: 12.0
+  use_cue_line: false
+  aim_mode: cue_to_object
+
+overlay:
+  line_color_bgr: [0, 255, 200]
+  ghost_ball_color_bgr: [0, 180, 255]
+  line_thickness_px: 3
+  ghost_ball_radius_px: 12
+
+network:
+  stream_host: "0.0.0.0"
+  stream_port: 8554
+  stream_path: "/pool"
+  overlay_udp_host: "pool.local"
+  overlay_udp_port: 8765
+  desktop_bind_host: "0.0.0.0"
+  desktop_overlay_port: 8765
+
+paths:
+  table_homography: "config/calibration/table_homography.npz"
+  projector_homography: "config/calibration/projector_homography.npz"
+  lens_calibration: "config/calibration/lens.npz"
+  play_region: "config/calibration/play_region.npz"
+  camera_exposure: "config/calibration/camera_exposure.yaml"
+
+calibration:
+  region: full
+
+cameras:
+  overhead_index: 0
+  undistort: false
+  width: 1280
+  height: 720
+  fps: 30
+  manual_exposure: true
+  exposure: -6
+  zoom: 0
+  wide_width: 640
+  wide_height: 480
+  wide_zoom: 0
+
+projector:
+  display_width: 1920
+  display_height: 1080

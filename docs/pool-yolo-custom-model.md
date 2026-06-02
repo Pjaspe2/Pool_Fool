@@ -22,6 +22,20 @@ Installing YOLO does **not** train anything. Training is a separate one-time job
 
 ---
 
+## Test the 3-epoch preview model (before 80-epoch training)
+
+A short training run produced `config/models/pool_billiard_preview.pt`. Compare to COCO:
+
+```bash
+# Pi streaming, then on Mac:
+pool-fool-app --config config/yolo_preview.yaml \
+  --camera "http://pool.local:8080/stream.mjpg"
+```
+
+HUD should say `(custom)` and use magenta/green boxes. Quality will be mediocre — this is only a sanity check.
+
+---
+
 ## Step-by-step: train on [pool-billiard](https://universe.roboflow.com/nidacorian-protonmail-com/pool-billiard)
 
 ### 0. Keep the Pi streaming (for later testing)
@@ -180,7 +194,7 @@ Tune if needed:
 ## Blue felt dataset on your red table
 
 - **Good enough to try** without extra work.
-- **Better:** later, upload 50–100 snapshots from your Pi into the same Roboflow project, label balls, download again, and train another run (fine-tune from `pool_billiard_best.pt` with `model=config/models/pool_billiard_best.pt`).
+- **Better:** label 50–100 Pi frames with [`pool-fool-annotate`](annotate-your-images.md) or Roboflow, then fine-tune (see [annotate-your-images.md](annotate-your-images.md)).
 
 ---
 
