@@ -44,6 +44,31 @@ def _class_color(class_id: int) -> tuple[int, int, int]:
     return CLASS_COLORS[class_id % len(CLASS_COLORS)]
 
 
+def _draw_text(
+    img: np.ndarray,
+    text: str,
+    org: tuple[int, int],
+    *,
+    scale: float = 0.6,
+    thickness: int = 2,
+) -> None:
+    """Black text with light outline so class names read on red felt / white balls."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    x, y = org
+    for dx, dy in ((-1, -1), (-1, 1), (1, -1), (1, 1), (0, -1), (0, 1), (-1, 0), (1, 0)):
+        cv2.putText(
+            img,
+            text,
+            (x + dx, y + dy),
+            font,
+            scale,
+            (255, 255, 255),
+            thickness + 1,
+            cv2.LINE_AA,
+        )
+    cv2.putText(img, text, org, font, scale, (0, 0, 0), thickness, cv2.LINE_AA)
+
+
 def _list_images(folder: Path) -> list[Path]:
     exts = {".jpg", ".jpeg", ".png", ".webp"}
     if (folder / "images").is_dir():
@@ -262,7 +287,7 @@ def run_annotator(
                 color = _class_color(box.class_id)
                 cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
                 name = class_names[box.class_id] if box.class_id < len(class_names) else str(box.class_id)
-                cv2.putText(vis, name, (x1, max(12, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+                _draw_text(vis, name, (x1, max(14, y1 - 4)), scale=0.45, thickness=1)
             if state.drag_start and state.drag_end:
                 cv2.rectangle(vis, state.drag_start, state.drag_end, _class_color(state.class_id), 2)
             cname = class_names[state.class_id] if state.class_id < len(class_names) else "?"
@@ -271,36 +296,24 @@ def run_annotator(
                 title += f"  |  {current_path.name}"
             if state.dirty:
                 title += " *"
-            cv2.putText(vis, title, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            _draw_text(vis, title, (10, 28), scale=0.65, thickness=2)
             if state.status_msg:
-                cv2.putText(
-                    vis,
-                    state.status_msg[:70],
-                    (10, 72),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (100, 255, 100),
-                    1,
-                )
-            help_y = vis.shape[0] - 12
-            cv2.putText(
+                _draw_text(vis, state.status_msg[:70], (10, 56), scale=0.5, thickness=1)
+            help_y = vis.shape[0] - 14
+            _draw_text(
                 vis,
                 "u=undo  d/x=delete under mouse  r=clear  p=prev  s=save",
                 (10, help_y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                (160, 160, 160),
-                1,
+                scale=0.45,
+                thickness=1,
             )
             if image_paths:
-                cv2.putText(
+                _draw_text(
                     vis,
                     f"image {idx + 1}/{len(image_paths)}",
-                    (10, 48),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (180, 180, 180),
-                    1,
+                    (10, 82),
+                    scale=0.5,
+                    thickness=1,
                 )
             cv2.imshow(window, vis)
 
