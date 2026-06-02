@@ -37,7 +37,25 @@ pool-fool-edge --config config/default.yaml --mode combined
 
 `combined` = MJPEG on port **8080** + listen for overlay lines on UDP **8765**.
 
-Set Pi IP in `config/default.yaml` on **both** machines under `network.overlay_udp_host` (desktop sends to Pi).
+### Stream URL from your Mac
+
+The Pi prints `http://0.0.0.0:8080/...` — that means “listen on all interfaces” **on the Pi only**. From the Mac, use the Pi’s hostname via **mDNS**:
+
+```text
+http://pool.local:8080/stream.mjpg
+```
+
+(`pool` is the hostname set in Raspberry Pi Imager; if yours differs, use `http://<hostname>.local:8080/stream.mjpg`.)
+
+You can also use the Pi’s IP from `hostname -I` on the Pi, e.g. `http://192.168.12.115:8080/stream.mjpg`.
+
+Verify in a browser or:
+
+```bash
+curl -I http://pool.local:8080/stream.mjpg
+```
+
+Set `network.overlay_udp_host` on the **Mac** to the same Pi (`pool.local` or the IP) so overlay lines reach the Pi.
 
 ## On the desktop (Mac)
 
@@ -54,13 +72,13 @@ vision:
   detector: yolo
 
 network:
-  overlay_udp_host: "192.168.1.XXX"   # Pi IP address
+  overlay_udp_host: "pool.local"   # or Pi IP from `hostname -I`
 ```
 
 3. Calibrate **once** using the Pi stream (same view as production):
 
 ```bash
-pool-fool-calibrate capture --camera "http://192.168.1.XXX:8080/stream.mjpg"
+pool-fool-calibrate capture --camera "http://pool.local:8080/stream.mjpg"
 pool-fool-calibrate table --image config/calibration/snapshot.jpg
 pool-fool-calibrate play-region --image config/calibration/snapshot.jpg
 ```
@@ -69,11 +87,30 @@ pool-fool-calibrate play-region --image config/calibration/snapshot.jpg
 
 ```bash
 pool-fool-app --config config/default.yaml \
-  --camera "http://192.168.1.XXX:8080/stream.mjpg" \
+  --camera "http://pool.local:8080/stream.mjpg" \
   --send-overlay
 ```
 
 Debug window on the Mac; projector on the Pi shows lines when balls are **STATIONARY**.
+
+## Cannot open the stream from the Mac?
+
+1. **Do not use `http://0.0.0.0:8080/...` on the Mac** — use `http://pool.local:8080/stream.mjpg` or the Pi’s IP.
+2. **On the Pi** (while `pool-fool-edge` is running):
+   ```bash
+   curl -I http://127.0.0.1:8080/stream.mjpg
+   ss -tlnp | grep 8080
+   hostname    # e.g. pool → Mac URL is http://pool.local:8080/stream.mjpg
+   ```
+   You should see `HTTP/1.0 200` and something listening on `0.0.0.0:8080`.
+3. **On the Mac**:
+   ```bash
+   ping -c 2 pool.local
+   curl -I --max-time 5 http://pool.local:8080/stream.mjpg
+   ```
+   If mDNS fails, use `hostname -I` on the Pi and ping/curl that IP instead.
+4. If (2) works but (3) fails: different Wi‑Fi/VLAN, **AP/client isolation**, or firewall — use **Ethernet on both** or disable guest-network isolation.
+5. Safari can be picky with MJPEG; try **Chrome** or `pool-fool-app --camera "http://pool.local:8080/stream.mjpg"`.
 
 ## If it feels slow
 

@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/path/to/Pool_Fool
-ExecStart=/path/to/Pool_Fool/.venv/bin/pool-fool-app --config config/default.yaml --camera http://192.168.1.100:8080/stream.mjpg --send-overlay --projector-preview
+ExecStart=/path/to/Pool_Fool/.venv/bin/pool-fool-app --config config/default.yaml --camera http://pool.local:8080/stream.mjpg --send-overlay --projector-preview
 Restart=on-failure
 
 [Install]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -14,6 +15,30 @@ from pool_fool.edge.overlay_receiver import EdgeOverlayReceiver
 from pool_fool.edge.stream_server import FfmpegRtspPublisher, MjpegHttpServer
 from pool_fool.shared.config import load_config
 from pool_fool.shared.schemas import OverlayMessage
+
+
+def _lan_ip() -> str | None:
+    """Best-effort IPv4 on the default route (for printing Mac-facing URLs)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return None
+
+
+def _print_stream_urls(port: int) -> None:
+    hostname = socket.gethostname().split(".")[0] or "raspberrypi"
+    print(f"Streaming MJPEG on port {port} (bound to all interfaces)")
+    print(f"  On the Pi:       http://127.0.0.1:{port}/stream.mjpg")
+    print(f"  From your Mac:   http://{hostname}.local:{port}/stream.mjpg")
+    ip = _lan_ip()
+    if ip:
+        print(f"  Or by IP:        http://{ip}:{port}/stream.mjpg")
+    print("  Do not use http://0.0.0.0 on the Mac — that only works on the Pi.")
 
 
 def _run_mjpeg_http(server: MjpegHttpServer) -> None:
@@ -78,7 +103,7 @@ def run_stream_mode(config_path: Path, camera: int, use_rtsp: bool) -> int:
             print("ffmpeg not found; MJPEG only on :8080/stream.mjpg")
             rtsp = None
 
-    print("Streaming on http://0.0.0.0:8080/stream.mjpg")
+    _print_stream_urls(8080)
     try:
         while True:
             pkt = cap.read()

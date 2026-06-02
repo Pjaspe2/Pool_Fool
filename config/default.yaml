@@ -51,7 +51,7 @@ network:
   stream_host: "0.0.0.0"
   stream_port: 8554
   stream_path: "/pool"
-  overlay_udp_host: "192.168.1.100"  # Pi IP
+  overlay_udp_host: "pool.local"  # Pi mDNS hostname; or IP from `hostname -I` on the Pi
   overlay_udp_port: 8765
   desktop_bind_host: "0.0.0.0"
   desktop_overlay_port: 8765

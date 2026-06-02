@@ -77,18 +77,22 @@ Keys: `q` quit, `r` reset cue-ball hint, `c` re-run corner calibration.
 # Stream MJPEG to desktop + listen for overlay + HDMI projector
 pool-fool-edge --config config/default.yaml --mode combined
 
-# Optional ffmpeg RTSP (requires ffmpeg on Pi)
-pool-fool-edge --config config/default.yaml --mode stream --rtsp
+# Stream only (test camera + Mac browser)
+pool-fool-edge --config config/default.yaml --mode stream
 ```
+
+From the Mac, open the stream at **`http://<pi-hostname>.local:8080/stream.mjpg`** (e.g. `http://pool.local:8080/stream.mjpg` if the Pi hostname is `pool`). Do not use `0.0.0.0` in the browser — that address is only meaningful on the Pi.
 
 On the desktop, point at the Pi stream and send overlays:
 
 ```bash
-# Edit config/default.yaml: overlay_udp_host = Pi IP
+# config/default.yaml: overlay_udp_host = pool.local (or Pi IP)
 pool-fool-app --config config/default.yaml \
-  --camera http://192.168.1.100:8080/stream.mjpg \
+  --camera http://pool.local:8080/stream.mjpg \
   --send-overlay --projector-preview
 ```
+
+See [docs/pi-desktop-yolo.md](docs/pi-desktop-yolo.md) for the full Pi + Mac workflow.
 
 ### 4. Projector calibration
 
