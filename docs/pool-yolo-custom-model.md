@@ -76,20 +76,32 @@ That zip **is** the labeled dataset — good enough to train as-is.
 
 ### 3. Train on the Mac
 
+**Important:** Roboflow’s `data.yaml` often has wrong paths (`../train/images`). They must be:
+
+```yaml
+train: train/images
+val: valid/images
+test: test/images
+```
+
+(Already fixed if your dataset is at `Datasets/Pool Billiard.yolov8/`.)
+
 ```bash
 cd ~/CursorCode/Pool_Fool
 source .venv/bin/activate
 
 yolo detect train \
   model=yolov8n.pt \
-  data=~/Downloads/Pool-Billiard-1/data.yaml \
+  data="Datasets/Pool Billiard.yolov8/data.yaml" \
   epochs=80 \
   imgsz=640 \
   batch=8 \
-  name=pool_billiard
+  name=pool_billiard \
+  project=runs
 ```
 
-Replace the `data=` path with your actual `data.yaml` location.
+Weights end up at: `runs/detect/pool_billiard/weights/best.pt`  
+(~1–2 hours on Mac CPU for 80 epochs; a 3-epoch test run takes ~5 min.)
 
 - First run may download `yolov8n.pt` again (normal).
 - Training writes to `runs/detect/pool_billiard/`.
@@ -111,11 +123,13 @@ python -c "from ultralytics import YOLO; m=YOLO('runs/detect/pool_billiard/weigh
 
 Example output (yours may differ):
 
+For **Pool Billiard** (your export):
+
 ```text
-{0: 'cue_ball', 1: '1_ball', 2: 'pocket', ...}
+{0: 'Break', 1: 'Cue_Ball', 2: 'Eight', ... 6: 'Object_Ball', ...}
 ```
 
-Note the **number** for cue ball and any classes you want to ignore (pockets, table, etc.).
+Use **`yolo_cue_class_ids: [1]`** for `Cue_Ball`. Optionally exclude **`Break`** (rack layout, not a rolling ball): add `break` to `yolo_exclude_class_names`.
 
 ---
 
@@ -137,8 +151,8 @@ vision:
   yolo_model: config/models/pool_billiard_best.pt
   yolo_class_ids: all
   yolo_confidence: 0.35
-  yolo_cue_class_ids: [0]   # ← use cue ball’s id from step 4
-  yolo_exclude_class_names: [pocket, bag, rack, table, flag]
+  yolo_cue_class_ids: [1]   # Cue_Ball in Pool Billiard dataset
+  yolo_exclude_class_names: [break]
 ```
 
 Remove or comment out the old COCO-only line `yolo_class_ids: [32]`.
