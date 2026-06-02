@@ -12,9 +12,16 @@ import numpy as np
 class MjpegStreamClient:
     """Pull MJPEG from Pi edge (http://host:8080/stream.mjpg)."""
 
-    def __init__(self, url: str, on_frame: Callable[[np.ndarray], None]) -> None:
+    def __init__(
+        self,
+        url: str,
+        on_frame: Callable[[np.ndarray], None],
+        *,
+        connect_timeout_s: float = 15.0,
+    ) -> None:
         self.url = url
         self._on_frame = on_frame
+        self._connect_timeout_s = connect_timeout_s
         self._running = False
         self._thread: threading.Thread | None = None
         self._latency_ms: float = 0.0
@@ -56,7 +63,7 @@ class MjpegStreamClient:
 
     def _read_stream(self) -> None:
         req = urllib.request.Request(self.url, headers={"User-Agent": "pool-fool"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=self._connect_timeout_s) as resp:
             buf = b""
             while self._running:
                 chunk = resp.read(4096)

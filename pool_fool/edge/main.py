@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 from pathlib import Path
 
 import cv2
@@ -41,6 +42,12 @@ def _print_stream_urls(port: int) -> None:
     print("  Do not use http://0.0.0.0 on the Mac — that only works on the Pi.")
 
 
+class _ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    """Allow browser + desktop app to view the stream at the same time."""
+
+    daemon_threads = True
+
+
 def _run_mjpeg_http(server: MjpegHttpServer) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
@@ -67,7 +74,8 @@ def _run_mjpeg_http(server: MjpegHttpServer) -> None:
         def log_message(self, format, *args):  # noqa: A003
             return
 
-    httpd = HTTPServer((server.host, server.port), Handler)
+    httpd = _ThreadedHTTPServer((server.host, server.port), Handler)
+    print("MJPEG server: threaded (multiple viewers OK)")
     httpd.serve_forever()
 
 

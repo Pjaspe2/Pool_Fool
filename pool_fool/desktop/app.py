@@ -154,7 +154,9 @@ def run_loop(
     if use_mjpeg:
         print(
             "Browser URL is raw Pi video only — no overlay in Safari/Chrome.\n"
-            "This app opens a separate window: pool_fool_debug (YOLO circles + aim lines)."
+            "This app opens a separate window: pool_fool_debug (YOLO circles + aim lines).\n"
+            "If the stream fails: restart pool-fool-edge on the Pi (git pull for threaded server),\n"
+            "  or close the browser tab — old Pi server allowed only one viewer."
         )
     print("Keys: q=quit  r=lock cue ball  (orange outline = play-area mask)")
 

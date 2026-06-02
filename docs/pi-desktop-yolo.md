@@ -145,6 +145,14 @@ First YOLO frame can take **10–30 s** after the stream connects (model warmup)
 
 COCO class **32** is generic “sports ball” — a custom pool-ball model would help most long-term.
 
+## `pool-fool-app` says “Waiting for stream” but the browser works?
+
+Older Pi builds used a **single-client** HTTP server: a **browser tab** holding `/stream.mjpg` blocks the Mac app (`timed out` / `Connection refused`).
+
+**Fix:** On the Pi, `git pull` and restart edge — you should see `MJPEG server: threaded (multiple viewers OK)`.
+
+**Workaround (old Pi):** Close the browser tab, then start `pool-fool-app`.
+
 ## Cannot open the stream from the Mac?
 
 1. **Do not use `http://0.0.0.0:8080/...` on the Mac** — use `http://pool.local:8080/stream.mjpg` or the Pi’s IP.
