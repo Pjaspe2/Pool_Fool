@@ -1,0 +1,107 @@
+# Pool Fool
+
+Ghost-ball pool assist: cameras at the table, vision on a desktop, projected aim lines on the felt.
+
+## Architecture
+
+- **Edge (Raspberry Pi 4):** USB camera capture, H.264 stream to desktop, receives overlay lines, HDMI to projector.
+- **Desktop:** Table/camera calibration, ball and cue detection, ghost-ball geometry, overlay composition.
+
+**Pi + Mac over Ethernet:** [docs/pi-desktop-yolo.md](docs/pi-desktop-yolo.md) — Pi streams MJPEG, desktop runs YOLO, UDP overlay back to projector.
+
+## Quick start
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+```
+
+### Red felt / lens (optional)
+
+```bash
+# Hover mouse on felt to read HSV; tune config vision.felt_hsv_red
+pool-fool-calibrate felt-sample --config config/default.yaml --camera 0
+
+# No printer: ChArUco on phone (measure one square on screen with a ruler)
+pool-fool-calibrate lens-aruco --square-mm 40 --camera 0
+
+# Or rough focal length from mount height (does not fix strong fisheye)
+pool-fool-calibrate lens-estimate --camera-height-mm 1500
+
+# Re-run table calibration after lens
+```
+
+See [docs/calibration-without-printer.md](docs/calibration-without-printer.md) for Xbox boxes, skipping lens, etc.
+
+### Ball detection modes
+
+Default is **classical** (Hough circles + red felt mask). If detections are noisy, try **YOLO**:
+
+```bash
+pip install -e ".[yolo]"
+```
+
+In `config/default.yaml` set `vision.detector: yolo` (uses COCO “sports ball”, class 32).
+
+Tune red felt: `pool-fool-calibrate felt-sample --camera 0`
+
+### Play-area mask (ignore pockets / rails)
+
+```bash
+pool-fool-calibrate play-region --config config/default.yaml --camera 0
+# or from snapshot: --image config/calibration/snapshot.jpg
+```
+
+Click **inside the rails** (TL → TR → BR → BL), excluding pockets. Orange outline in the app shows the mask.
+
+### 1. Calibrate overhead camera → table plane
+
+```bash
+pool-fool-calibrate table --config config/default.yaml --camera 0
+```
+
+Click four table corners (rail inside edges), then `s` to save homography to `config/calibration/table_homography.npz`.
+
+### 2. Run desktop debug (webcam or video file)
+
+```bash
+pool-fool-app --config config/default.yaml --camera 0
+```
+
+Keys: `q` quit, `r` reset cue-ball hint, `c` re-run corner calibration.
+
+### 3. Edge (on Pi)
+
+```bash
+# Stream MJPEG to desktop + listen for overlay + HDMI projector
+pool-fool-edge --config config/default.yaml --mode combined
+
+# Optional ffmpeg RTSP (requires ffmpeg on Pi)
+pool-fool-edge --config config/default.yaml --mode stream --rtsp
+```
+
+On the desktop, point at the Pi stream and send overlays:
+
+```bash
+# Edit config/default.yaml: overlay_udp_host = Pi IP
+pool-fool-app --config config/default.yaml \
+  --camera http://192.168.1.100:8080/stream.mjpg \
+  --send-overlay --projector-preview
+```
+
+### 4. Projector calibration
+
+```bash
+pool-fool-calibrate projector --config config/default.yaml --camera 0
+```
+
+## Tests
+
+```bash
+pytest
+```
+
+## Config
+
+Edit [`config/default.yaml`](config/default.yaml) for table size, ball radius, network addresses, and vision thresholds.

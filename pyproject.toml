@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pool-fool"
+version = "0.1.0"
+description = "Ghost-ball pool assist with camera vision and projector overlay"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "pyyaml>=6.0",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+yolo = ["ultralytics>=8.0", "torch>=2.0"]
+
+[project.scripts]
+pool-fool-calibrate = "pool_fool.desktop.calibrate.cli:main"
+pool-fool-app = "pool_fool.desktop.app:main"
+pool-fool-edge = "pool_fool.edge.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pool_fool*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

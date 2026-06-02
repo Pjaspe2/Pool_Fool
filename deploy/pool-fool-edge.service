@@ -1,0 +1,14 @@
+[Unit]
+Description=Pool Fool edge (stream + projector overlay)
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Pool_Fool
+ExecStart=/home/pi/Pool_Fool/.venv/bin/pool-fool-edge --config config/default.yaml --mode combined
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
