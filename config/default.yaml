@@ -12,6 +12,8 @@ vision:
   yolo_confidence: 0.35
   yolo_class_ids: [32]   # COCO 32 = sports ball
   yolo_imgsz: 640        # lower (416) = faster on CPU; higher = more accurate
+  ball_tracker_alpha: 0.2   # lower = smoother YOLO boxes (less jitter)
+  ball_tracker_match_gate_mm: 100.0
   # Playing surface color (red refelt). Tune with pool-fool-calibrate felt-sample
   felt_color: red
   felt_hsv_red:
@@ -34,7 +36,6 @@ vision:
   hough_param2: 28
   min_ball_radius_px: 8
   max_ball_radius_px: 40
-  ball_tracker_alpha: 0.35
   stationary_velocity_mm_s: 25.0
   stationary_frames_required: 5
   aim_angle_threshold_deg: 12.0

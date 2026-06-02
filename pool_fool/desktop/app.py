@@ -12,7 +12,7 @@ from pool_fool.desktop.latency import FrameTimer, LatencyStats
 from pool_fool.desktop.network.overlay_udp import OverlaySender
 from pool_fool.desktop.network.stream_client import MjpegStreamClient
 from pool_fool.desktop.physics.ghost_ball import solve_shot
-from pool_fool.desktop.vision.detector_factory import create_ball_detector
+from pool_fool.desktop.vision.detector_factory import create_ball_detector, detector_mode_label
 from pool_fool.desktop.vision.cue import CueDetector
 from pool_fool.desktop.vision.fusion import fuse_cue_direction
 from pool_fool.desktop.vision.tracking import BallTracker, StationaryGate
@@ -87,7 +87,12 @@ def run_loop(
         print("Falling back to classical detector.")
         vision = {**vision, "detector": "classical"}
         ball_detector = create_ball_detector(vision, table, H, play_region)
-    print(f"Ball detector: {vision.get('detector', 'classical')}")
+    detector_mode = str(vision.get("detector", "classical")).lower()
+    detector_label = detector_mode_label(vision)
+    print(f"Ball detector: {detector_label}")
+    if detector_mode == "yolo":
+        print("  YOLO = magenta/green boxes on balls. Orange quad = play-region cal (not Hough).")
+        print("  Cue stick line still uses classical edge detection.")
     cue_detector = CueDetector(vision, H, play_region)
     side_index = _side_camera_index(cfg.get("cameras", {}))
     side_cap: cv2.VideoCapture | None = None
@@ -100,6 +105,7 @@ def run_loop(
             side_cap = None
     tracker = BallTracker(
         alpha=float(vision.get("ball_tracker_alpha", 0.35)),
+        match_gate_mm=float(vision.get("ball_tracker_match_gate_mm", 80.0)),
     )
     gate = StationaryGate(
         float(vision.get("stationary_velocity_mm_s", 25.0)),
@@ -196,8 +202,9 @@ def run_loop(
         latency_stats.record(frame_timer.tick())
         frame = preprocess_frame(frame, lens)
 
-        balls = ball_detector.detect(frame)
-        balls = tracker.update(balls)
+        raw_balls = ball_detector.detect(frame)
+        raw_count = len(raw_balls)
+        balls = tracker.update(raw_balls)
         stationary = gate.update(balls)
 
         cue_ball, objects = ball_detector.split_cue_and_objects(balls)
@@ -229,12 +236,37 @@ def run_loop(
         if play_region is not None:
             play_region.draw(vis, H_inv)
 
+        use_yolo_vis = detector_mode == "yolo"
         for b in balls:
-            px = (int(b.center_px[0]), int(b.center_px[1]))
-            color = (255, 255, 255) if b.is_cue else (200, 120, 50)
-            cv2.circle(vis, px, int(b.radius_px), color, 2)
+            if use_yolo_vis and b.bbox_px is not None:
+                x1, y1, x2, y2 = b.bbox_px
+                color = (0, 255, 120) if b.is_cue else (255, 0, 255)
+                cv2.rectangle(vis, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.circle(vis, (int(b.center_px[0]), int(b.center_px[1])), 3, color, -1)
+            else:
+                px = (int(b.center_px[0]), int(b.center_px[1]))
+                color = (255, 255, 255) if b.is_cue else (200, 120, 50)
+                cv2.circle(vis, px, int(b.radius_px), color, 2)
 
         status = "STATIONARY" if stationary else "MOVING"
+        cv2.putText(
+            vis,
+            f"Balls: {detector_label}",
+            (20, 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255) if use_yolo_vis else (180, 220, 255),
+            2,
+        )
+        cv2.putText(
+            vis,
+            f"tracked {len(balls)}  raw {raw_count}  |  cue line: Hough",
+            (20, 52),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (180, 180, 180),
+            1,
+        )
         cv2.putText(vis, status, (20, vis.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
         cv2.putText(
             vis,

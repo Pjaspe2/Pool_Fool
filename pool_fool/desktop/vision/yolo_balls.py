@@ -85,6 +85,7 @@ class YoloBallDetector:
                     radius_px=r_px,
                     is_cue=False,
                     brightness=brightness,
+                    bbox_px=(x1, y1, x2, y2),
                 )
             )
 

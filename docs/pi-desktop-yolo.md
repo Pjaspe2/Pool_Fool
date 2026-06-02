@@ -117,8 +117,14 @@ You should see `Ball detector: yolo` in the terminal.
 | Where | What |
 |-------|------|
 | **Browser** `http://pool.local:8080/stream.mjpg` | Raw camera only — **no** YOLO, **no** aim lines |
-| **Mac app window** `pool_fool_debug` | Pi video + YOLO circles + ghost-ball lines when aiming works |
+| **Mac app window** `pool_fool_debug` | Pi video + **magenta/green YOLO boxes** + ghost-ball lines when aiming works |
 | **Pi projector** | Nothing until you run `--mode combined` + projector calibration |
+
+**How to tell YOLO is active:** top-left HUD says `Balls: YOLO yolov8n.pt ...`, balls are drawn as **rectangles** (magenta = object, green = cue). Classical mode uses **white/orange circles** instead.
+
+**Orange quad** = play-region mask from `play_region.npz` — saved calibration, **not** the ball detector. It persists across classical/YOLO and is correct only if the camera view still matches when you ran `play-region` (re-do after moving camera Mac → Pi).
+
+**Still classical:** cue-stick direction (Hough lines on edges). Only **ball** detection switched to YOLO.
 
 The app does **not** draw on the browser stream. If no window appears, check the Terminal for `Stream connected` or `Stream error`, and look behind other windows for `pool_fool_debug`.
 

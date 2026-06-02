@@ -17,6 +17,15 @@ class BallDetectorProtocol(Protocol):
     ) -> tuple[DetectedBall | None, list[DetectedBall]]: ...
 
 
+def detector_mode_label(vision_cfg: dict) -> str:
+    mode = str(vision_cfg.get("detector", "classical")).lower()
+    if mode == "yolo":
+        model = vision_cfg.get("yolo_model", "yolov8n.pt")
+        conf = vision_cfg.get("yolo_confidence", 0.35)
+        return f"YOLO {model} conf={conf}"
+    return "classical Hough+HSV"
+
+
 def create_ball_detector(
     vision_cfg: dict,
     table: TableSpec,

@@ -19,6 +19,8 @@ class DetectedBall:
     is_cue: bool
     brightness: float
     track_id: int = -1
+    # Set by YOLO only — used to draw boxes so you can tell YOLO vs Hough circles
+    bbox_px: tuple[float, float, float, float] | None = None
 
 
 class BallDetector:
