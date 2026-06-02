@@ -7,10 +7,11 @@ table:
 
 vision:
   # ball detector: classical (Hough) | yolo (needs pip install -e ".[yolo]")
-  detector: classical
+  detector: yolo
   yolo_model: yolov8n.pt
   yolo_confidence: 0.35
-  yolo_class_ids: [32]
+  yolo_class_ids: [32]   # COCO 32 = sports ball
+  yolo_imgsz: 640        # lower (416) = faster on CPU; higher = more accurate
   # Playing surface color (red refelt). Tune with pool-fool-calibrate felt-sample
   felt_color: red
   felt_hsv_red:

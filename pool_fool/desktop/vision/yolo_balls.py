@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from pool_fool.desktop.vision.balls import DetectedBall
 from pool_fool.shared.homography import image_to_table
 from pool_fool.shared.play_region import PlayRegion
@@ -38,6 +40,7 @@ class YoloBallDetector:
         self._model = YOLO(model_name)
         self._classes = vision_cfg.get("yolo_class_ids", [32])
         self._conf = float(vision_cfg.get("yolo_confidence", 0.35))
+        self._imgsz = int(vision_cfg.get("yolo_imgsz", 640))
 
     def set_cue_hint(self, center_mm) -> None:
         import numpy as np
@@ -51,6 +54,7 @@ class YoloBallDetector:
             frame,
             conf=self._conf,
             classes=self._classes,
+            imgsz=self._imgsz,
             verbose=False,
         )
         balls: list[DetectedBall] = []

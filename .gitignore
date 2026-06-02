@@ -7,5 +7,6 @@ htmlcov/
 dist/
 *.egg-info/
 .DS_Store
+*.pt
 config/calibration/*.npz
 !config/calibration/.gitkeep

@@ -59,23 +59,42 @@ Set `network.overlay_udp_host` on the **Mac** to the same Pi (`pool.local` or th
 
 ## On the desktop (Mac)
 
-1. Install YOLO extras:
+### 1. Install YOLO (Mac Terminal, in the project venv)
 
 ```bash
+cd ~/CursorCode/Pool_Fool   # or wherever you cloned it
+source .venv/bin/activate
 pip install -e ".[yolo]"
 ```
 
-2. Edit `config/default.yaml`:
+First run downloads `yolov8n.pt` (~6 MB). This can take several minutes.
+
+Quick check:
+
+```bash
+python -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); print('ok')"
+```
+
+### 2. Config
+
+`config/default.yaml` should already have:
 
 ```yaml
 vision:
   detector: yolo
+  yolo_model: yolov8n.pt
+  yolo_confidence: 0.35
+  yolo_imgsz: 640
 
 network:
-  overlay_udp_host: "pool.local"   # or Pi IP from `hostname -I`
+  overlay_udp_host: "pool.local"
 ```
 
-3. Calibrate **once** using the Pi stream (same view as production):
+Switch back to `detector: classical` anytime if you want to compare.
+
+### 3. Calibrate **once** using the Pi stream (same view as production)
+
+Pi must be streaming (`pool-fool-edge --mode stream` or `combined`):
 
 ```bash
 pool-fool-calibrate capture --camera "http://pool.local:8080/stream.mjpg"
@@ -83,7 +102,7 @@ pool-fool-calibrate table --image config/calibration/snapshot.jpg
 pool-fool-calibrate play-region --image config/calibration/snapshot.jpg
 ```
 
-4. Run processing:
+### 4. Run YOLO + ghost-ball
 
 ```bash
 pool-fool-app --config config/default.yaml \
@@ -91,7 +110,20 @@ pool-fool-app --config config/default.yaml \
   --send-overlay
 ```
 
-Debug window on the Mac; projector on the Pi shows lines when balls are **STATIONARY**.
+You should see `Ball detector: yolo` in the terminal. Debug window on the Mac shows white/orange circles on detected balls; projector on the Pi shows aim lines when balls are **STATIONARY**.
+
+**Keys:** `q` quit · `r` lock which ball is the cue ball (if YOLO picks the wrong one)
+
+### YOLO tuning
+
+| Symptom | Fix |
+|--------|-----|
+| No balls detected | Lower `yolo_confidence` (try `0.25`) |
+| Too many false balls (pockets, reflections) | Raise `yolo_confidence` (try `0.45`); run `play-region` calibration |
+| Mac feels sluggish | Set `yolo_imgsz: 416`; close other apps |
+| Wrong cue ball | Press `r` while cue ball is visible |
+
+COCO class **32** is generic “sports ball” — works for pool balls but is not pool-specific. A custom-trained model would be a later step.
 
 ## Cannot open the stream from the Mac?
 
