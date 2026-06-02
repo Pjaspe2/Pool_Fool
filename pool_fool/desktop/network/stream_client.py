@@ -18,6 +18,8 @@ class MjpegStreamClient:
         self._running = False
         self._thread: threading.Thread | None = None
         self._latency_ms: float = 0.0
+        self._frames_received = 0
+        self._last_error: str | None = None
 
     @property
     def latency_ms(self) -> float:
@@ -33,11 +35,23 @@ class MjpegStreamClient:
         if self._thread:
             self._thread.join(timeout=2.0)
 
+    @property
+    def frames_received(self) -> int:
+        return self._frames_received
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
+
     def _loop(self) -> None:
         while self._running:
             try:
+                print(f"Connecting to MJPEG stream: {self.url}")
+                self._last_error = None
                 self._read_stream()
-            except Exception:
+            except Exception as e:
+                self._last_error = str(e)
+                print(f"Stream error ({self.url}): {e} — retrying in 0.5s")
                 time.sleep(0.5)
 
     def _read_stream(self) -> None:
@@ -61,4 +75,10 @@ class MjpegStreamClient:
                     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                     if frame is not None:
                         self._latency_ms = (time.monotonic() - t0) * 1000.0
+                        self._frames_received += 1
+                        if self._frames_received == 1:
+                            print(
+                                f"Stream connected ({frame.shape[1]}x{frame.shape[0]}). "
+                                "Look for the pool_fool_debug window."
+                            )
                         self._on_frame(frame)

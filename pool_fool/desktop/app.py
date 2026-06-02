@@ -115,7 +115,10 @@ def run_loop(
     sender: OverlaySender | None = None
     if send_overlay:
         net = cfg["network"]
-        sender = OverlaySender(net["overlay_udp_host"], int(net["overlay_udp_port"]))
+        host = net["overlay_udp_host"]
+        port = int(net["overlay_udp_port"])
+        sender = OverlaySender(host, port)
+        print(f"Overlay UDP → {host}:{port} (Pi must run edge --mode combined; needs projector cal)")
 
     latest_frame: list[np.ndarray | None] = [None]
     stream_client: MjpegStreamClient | None = None
@@ -145,7 +148,15 @@ def run_loop(
             print("Run: pool-fool-calibrate doctor")
             return 1
 
+    if use_mjpeg:
+        print(
+            "Browser URL is raw Pi video only — no overlay in Safari/Chrome.\n"
+            "This app opens a separate window: pool_fool_debug (YOLO circles + aim lines)."
+        )
     print("Keys: q=quit  r=lock cue ball  (orange outline = play-area mask)")
+
+    cv2.namedWindow("pool_fool_debug", cv2.WINDOW_NORMAL)
+    waiting_logged = False
 
     last_result = None
     fps_t0 = time.monotonic()
@@ -157,9 +168,26 @@ def run_loop(
         if use_mjpeg:
             frame = latest_frame[0]
             if frame is None:
+                if not waiting_logged:
+                    err = stream_client.last_error if stream_client else None
+                    hint = f" ({err})" if err else ""
+                    print(f"Waiting for frames from stream…{hint}")
+                    waiting_logged = True
+                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(
+                    placeholder,
+                    "Waiting for Pi stream...",
+                    (40, 240),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (200, 200, 200),
+                    2,
+                )
+                cv2.imshow("pool_fool_debug", placeholder)
                 if cv2.waitKey(30) & 0xFF == ord("q"):
                     break
                 continue
+            waiting_logged = False
         else:
             ret, frame = cap.read()
             if not ret:
@@ -220,7 +248,7 @@ def run_loop(
         cv2.putText(
             vis,
             latency_stats.format(),
-            (20, vis.shape[0] - 50),
+            (20, vis.shape[0] - 80),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
             (180, 180, 180),

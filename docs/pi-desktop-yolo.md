@@ -110,7 +110,19 @@ pool-fool-app --config config/default.yaml \
   --send-overlay
 ```
 
-You should see `Ball detector: yolo` in the terminal. Debug window on the Mac shows white/orange circles on detected balls; projector on the Pi shows aim lines when balls are **STATIONARY**.
+You should see `Ball detector: yolo` in the terminal.
+
+### What you should see (no projector yet)
+
+| Where | What |
+|-------|------|
+| **Browser** `http://pool.local:8080/stream.mjpg` | Raw camera only — **no** YOLO, **no** aim lines |
+| **Mac app window** `pool_fool_debug` | Pi video + YOLO circles + ghost-ball lines when aiming works |
+| **Pi projector** | Nothing until you run `--mode combined` + projector calibration |
+
+The app does **not** draw on the browser stream. If no window appears, check the Terminal for `Stream connected` or `Stream error`, and look behind other windows for `pool_fool_debug`.
+
+First YOLO frame can take **10–30 s** after the stream connects (model warmup).
 
 **Keys:** `q` quit · `r` lock which ball is the cue ball (if YOLO picks the wrong one)
 
