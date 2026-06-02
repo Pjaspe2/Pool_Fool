@@ -16,6 +16,30 @@ from pool_fool.shared.play_region import PlayRegion
 from pool_fool.shared.table import TableSpec
 
 
+def _parse_yolo_classes(vision_cfg: dict) -> list[int] | None:
+    """None = all classes (custom pool model). [32] = COCO sports ball only."""
+    raw = vision_cfg.get("yolo_class_ids", [32])
+    if raw is None or raw == "all":
+        return None
+    return [int(x) for x in raw]
+
+
+def _resolve_exclude_class_ids(vision_cfg: dict, model) -> set[int]:
+    """Skip pockets/table/rack classes from Roboflow-style datasets."""
+    ids: set[int] = {int(x) for x in vision_cfg.get("yolo_exclude_class_ids", [])}
+    names = getattr(model, "names", {}) or {}
+    if isinstance(names, dict):
+        name_map = {int(k): str(v).lower() for k, v in names.items()}
+    else:
+        name_map = {i: str(n).lower() for i, n in enumerate(names)}
+    for sub in vision_cfg.get("yolo_exclude_class_names", ["pocket", "bag", "rack", "table", "flag"]):
+        sub = sub.lower()
+        for cid, cname in name_map.items():
+            if sub in cname:
+                ids.add(cid)
+    return ids
+
+
 class YoloBallDetector:
     """
     Ball detection via Ultralytics YOLO (COCO class 32 = sports ball).
@@ -44,7 +68,9 @@ class YoloBallDetector:
 
         model_name = vision_cfg.get("yolo_model", "yolov8n.pt")
         self._model = YOLO(model_name)
-        self._classes = vision_cfg.get("yolo_class_ids", [32])
+        self._classes = _parse_yolo_classes(vision_cfg)
+        self._exclude_class_ids = _resolve_exclude_class_ids(vision_cfg, self._model)
+        self._cue_class_ids = set(int(x) for x in vision_cfg.get("yolo_cue_class_ids", []))
         self._conf = float(vision_cfg.get("yolo_confidence", 0.25))
         self._imgsz = int(vision_cfg.get("yolo_imgsz", 640))
         self._iou = float(vision_cfg.get("yolo_iou", 0.55))
@@ -77,6 +103,9 @@ class YoloBallDetector:
         balls: list[DetectedBall] = []
         if results and results[0].boxes is not None:
             for box in results[0].boxes:
+                cls_id = int(box.cls[0]) if box.cls is not None else -1
+                if cls_id in self._exclude_class_ids:
+                    continue
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 cx = (x1 + x2) / 2.0
                 cy = (y1 + y2) / 2.0
@@ -98,6 +127,7 @@ class YoloBallDetector:
                         is_cue=False,
                         brightness=brightness,
                         bbox_px=(x1, y1, x2, y2),
+                        yolo_class_id=cls_id if cls_id >= 0 else None,
                     )
                 )
 
@@ -118,6 +148,12 @@ class YoloBallDetector:
             )
             balls[idx].is_cue = True
             return
+        if self._cue_class_ids:
+            for b in balls:
+                if b.yolo_class_id in self._cue_class_ids:
+                    b.is_cue = True
+            if any(b.is_cue for b in balls):
+                return
         # White cue on red felt: prefer brightest detection above threshold
         bright = [b for b in balls if b.brightness >= self._min_white]
         pool = bright if bright else balls

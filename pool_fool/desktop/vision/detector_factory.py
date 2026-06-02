@@ -20,7 +20,9 @@ class BallDetectorProtocol(Protocol):
 def detector_mode_label(vision_cfg: dict) -> str:
     model = vision_cfg.get("yolo_model", "yolov8n.pt")
     conf = vision_cfg.get("yolo_confidence", 0.25)
-    return f"YOLO {model} conf={conf}"
+    classes = vision_cfg.get("yolo_class_ids", [32])
+    src = "COCO-32" if classes == [32] else "custom"
+    return f"YOLO {model} conf={conf} ({src})"
 
 
 def create_ball_detector(

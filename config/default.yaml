@@ -7,9 +7,12 @@ table:
 
 vision:
   # YOLO-only ball detection (pip install -e ".[yolo]")
+  # Default: COCO pretrained — NOT pool-specific. See docs/pool-yolo-custom-model.md
   yolo_model: yolov8n.pt
   yolo_confidence: 0.22
-  yolo_class_ids: [32]   # COCO 32 = sports ball
+  yolo_class_ids: [32]   # COCO 32 = sports ball; use "all" with a custom Roboflow .pt
+  # yolo_cue_class_ids: [0]   # cue-ball class index from your trained model names
+  # yolo_exclude_class_names: [pocket, bag, rack, table, flag]
   yolo_imgsz: 640
   yolo_iou: 0.55
   yolo_max_det: 16

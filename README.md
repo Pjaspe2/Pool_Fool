@@ -40,7 +40,7 @@ See [docs/calibration-without-printer.md](docs/calibration-without-printer.md) f
 pip install -e ".[yolo]"
 ```
 
-Uses YOLOv8n COCO class 32 (“sports ball”). Tune in `config/default.yaml` under `vision:` (`yolo_confidence`, `ball_tracker_alpha`, etc.). See [docs/pi-desktop-yolo.md](docs/pi-desktop-yolo.md).
+Default: **YOLOv8n + COCO class 32** (generic “sports ball”, not billiards). For better detection, train on a pool dataset: [docs/pool-yolo-custom-model.md](docs/pool-yolo-custom-model.md).
 
 ### Play-area mask (ignore pockets / rails)
 

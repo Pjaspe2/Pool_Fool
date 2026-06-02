@@ -143,7 +143,7 @@ First YOLO frame can take **10–30 s** after the stream connects (model warmup)
 | MOVING when ball is still | Lower `ball_tracker_alpha` (e.g. `0.08`); raise `stationary_velocity_mm_s` (e.g. `60`) |
 | One white ball, weak detect | Lower `yolo_confidence` to `0.18`; keep `yolo_clahe: true` |
 
-COCO class **32** is generic “sports ball” — a custom pool-ball model would help most long-term.
+COCO class **32** is generic “sports ball” — poor fit for overhead pool. Train a pool model: [pool-yolo-custom-model.md](pool-yolo-custom-model.md) (Roboflow [pool-billiard](https://universe.roboflow.com/nidacorian-protonmail-com/pool-billiard) + your red-felt frames).
 
 ## `pool-fool-app` says “Waiting for stream” but the browser works?
 
