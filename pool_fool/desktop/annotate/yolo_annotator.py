@@ -26,6 +26,8 @@ class AnnotatorState:
     drag_start: tuple[int, int] | None = None
     drag_end: tuple[int, int] | None = None
     dirty: bool = False
+    mouse_xy: tuple[int, int] = (0, 0)
+    status_msg: str = ""
 
 
 CLASS_COLORS = [
@@ -63,6 +65,27 @@ def _write_dataset_yaml(out_dir: Path, class_names: list[str]) -> None:
     yaml_path.write_text(yaml.dump(content, default_flow_style=False), encoding="utf-8")
 
 
+def _box_index_at(
+    boxes: list[YoloBox], x: int, y: int, img_w: int, img_h: int
+) -> int | None:
+    """Index of box under (x,y), else nearest box within ~60px of center."""
+    inside: list[int] = []
+    nearest: tuple[int, float] | None = None
+    for i, box in enumerate(boxes):
+        x1, y1, x2, y2 = yolo_to_pixel(box, img_w, img_h)
+        if x1 <= x <= x2 and y1 <= y <= y2:
+            inside.append(i)
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        d2 = (cx - x) ** 2 + (cy - y) ** 2
+        if nearest is None or d2 < nearest[1]:
+            nearest = (i, d2)
+    if inside:
+        return inside[-1]
+    if nearest is not None and nearest[1] <= 60**2:
+        return nearest[0]
+    return None
+
+
 def grab_mjpeg_frame(url: str, timeout_s: float = 10.0) -> np.ndarray | None:
     latest: list[np.ndarray | None] = [None]
 
@@ -93,8 +116,9 @@ def run_annotator(
       drag LMB     draw box (current class)
       Tab / , .    prev / next class
       0-9          class 0-9 (if defined)
-      u            undo last box
-      d            delete box under cursor (or last)
+      u / Backspace  undo last box
+      d / x          delete box under mouse cursor
+      r            clear all boxes on this image
       s            save labels + next image
       n / p        next / prev image (folder mode)
       g            grab frame from --stream (saved to output)
@@ -109,14 +133,15 @@ def run_annotator(
     image_paths: list[Path] = []
     if images_dir is not None:
         image_paths = _list_images(images_dir)
+    else:
+        image_paths = _list_images(train_images)
 
     idx = max(0, min(start_index, max(0, len(image_paths) - 1)))
+    capture_counter = len(image_paths)
     state = AnnotatorState(class_names=class_names, class_id=min(1, len(class_names) - 1))
     window = "pool_fool_annotate"
     current_path: Path | None = None
     frame: np.ndarray | None = None
-    capture_counter = 0
-
     def load_image(path: Path) -> None:
         nonlocal frame, current_path, state
         img = cv2.imread(str(path))
@@ -149,6 +174,7 @@ def run_annotator(
         print(f"Saved {len(state.boxes)} boxes -> {label_path}")
 
     def on_mouse(event: int, x: int, y: int, _flags: int, _param: object) -> None:
+        state.mouse_xy = (x, y)
         if frame is None:
             return
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -162,10 +188,37 @@ def run_annotator(
             x2, y2 = state.drag_end
             if abs(x2 - x1) > 4 and abs(y2 - y1) > 4:
                 h, w = frame.shape[:2]
+                cname = class_names[state.class_id]
                 state.boxes.append(pixel_box_to_yolo(x1, y1, x2, y2, state.class_id, w, h))
                 state.dirty = True
+                state.status_msg = f"Added {cname} ({len(state.boxes)} boxes)"
             state.drag_start = None
             state.drag_end = None
+        elif event == cv2.EVENT_MOUSEMOVE:
+            state.mouse_xy = (x, y)
+
+    def undo_last_box() -> None:
+        if not state.boxes:
+            state.status_msg = "No boxes to undo"
+            return
+        removed = state.boxes.pop()
+        state.dirty = True
+        name = class_names[removed.class_id] if removed.class_id < len(class_names) else "?"
+        state.status_msg = f"Undid {name} ({len(state.boxes)} boxes left)"
+
+    def delete_box_at_cursor() -> None:
+        if frame is None or not state.boxes:
+            state.status_msg = "No boxes to delete"
+            return
+        h, w = frame.shape[:2]
+        bi = _box_index_at(state.boxes, state.mouse_xy[0], state.mouse_xy[1], w, h)
+        if bi is None:
+            state.status_msg = "No box under cursor — use u to undo last"
+            return
+        removed = state.boxes.pop(bi)
+        state.dirty = True
+        name = class_names[removed.class_id] if removed.class_id < len(class_names) else "?"
+        state.status_msg = f"Deleted {name} ({len(state.boxes)} boxes left)"
 
     cv2.namedWindow(window, cv2.WINDOW_NORMAL)
     cv2.setMouseCallback(window, on_mouse)
@@ -175,7 +228,9 @@ def run_annotator(
     print(f"  Classes ({len(class_names)}): {', '.join(class_names)}")
     for line in [
         "Drag: box   Tab/,: class   0-9: class id",
-        "s: save+next   n/p: next/prev   g: grab stream   u: undo   d: delete   q: quit",
+        "g: grab   s: save   p: prev image (fix mistakes)   n: next",
+        "u / Backspace: undo last box   d / x: delete box under mouse   r: clear all",
+        "q: quit",
     ]:
         print(f"  {line}")
 
@@ -217,6 +272,26 @@ def run_annotator(
             if state.dirty:
                 title += " *"
             cv2.putText(vis, title, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            if state.status_msg:
+                cv2.putText(
+                    vis,
+                    state.status_msg[:70],
+                    (10, 72),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (100, 255, 100),
+                    1,
+                )
+            help_y = vis.shape[0] - 12
+            cv2.putText(
+                vis,
+                "u=undo  d/x=delete under mouse  r=clear  p=prev  s=save",
+                (10, help_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (160, 160, 160),
+                1,
+            )
             if image_paths:
                 cv2.putText(
                     vis,
@@ -254,13 +329,20 @@ def run_annotator(
             idx = max(idx - 1, 0)
             load_image(image_paths[idx])
             continue
-        if key == ord("u") and state.boxes:
-            state.boxes.pop()
-            state.dirty = True
+        if key in (ord("u"), 8, 127):  # u, Backspace, Delete
+            undo_last_box()
+            print(state.status_msg)
             continue
-        if key == ord("d") and state.boxes:
-            state.boxes.pop()
-            state.dirty = True
+        if key in (ord("d"), ord("x")):
+            delete_box_at_cursor()
+            print(state.status_msg)
+            continue
+        if key == ord("r"):
+            n = len(state.boxes)
+            state.boxes.clear()
+            state.dirty = n > 0
+            state.status_msg = f"Cleared {n} boxes" if n else "No boxes"
+            print(state.status_msg)
             continue
         if key == ord("\t") or key == ord("."):
             state.class_id = (state.class_id + 1) % len(class_names)

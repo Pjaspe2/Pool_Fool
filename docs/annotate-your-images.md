@@ -66,8 +66,10 @@ pool-fool-annotate \
 | **0–9** | Jump to class id |
 | **g** | Grab frame from Pi → new `capture_XXXX.jpg` (balls should be still) |
 | **s** | Save labels for this image (required before next grab) |
-| **u** | Undo last box |
-| **n** / **p** | Next / previous image |
+| **u** or **Backspace** | Undo **last** box you drew |
+| **d** or **x** | Delete box **under the mouse** (hover on it, then press) |
+| **r** | Clear **all** boxes on this image |
+| **p** / **n** | Previous / next image (go back and fix a saved frame) |
 | **q** | Save and quit |
 
 Output layout:
