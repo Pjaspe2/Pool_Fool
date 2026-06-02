@@ -124,37 +124,76 @@ Same idea: boxes per ball → export → place under `train/images` + `train/lab
 
 ## Train after adding your images
 
-### Only your new folder (small set)
+Your `--simple` labels use 2 classes (`Cue_Ball`=0, `Object_Ball`=1). Pool Billiard uses **12 classes** (`Cue_Ball`=1, `Object_Ball`=6, …). Merge before a combined training run:
+
+### 1. Merge + oversample your table (recommended)
+
+`--custom-repeat 4` copies each of your 25 images **4 times** in `train/` (~4× more training weight vs one copy each). Ultralytics has no per-image weight flag; duplication is the standard approach.
+
+```bash
+cd ~/CursorCode/Pool_Fool
+source .venv/bin/activate
+
+python scripts/merge_yolo_datasets.py \
+  --roboflow "Datasets/Pool Billiard.yolov8" \
+  --custom "Datasets/my_red_felt" \
+  --output "Datasets/pool_combined" \
+  --custom-repeat 4
+```
+
+Use `--custom-repeat 6` for even more red-felt emphasis (diminishing returns past ~5).
+
+### 2. Full training pass (Pool Billiard + your 25 × repeat)
+
+From scratch (best if you have time):
 
 ```bash
 yolo detect train \
   model=yolov8n.pt \
-  data="Datasets/my_red_felt/data.yaml" \
-  epochs=50 \
+  data="Datasets/pool_combined/data.yaml" \
+  epochs=80 \
   imgsz=640 \
   batch=8 \
-  name=my_red_felt \
+  name=pool_combined \
   project=runs
 ```
 
-### Fine-tune from preview or full pool model (better)
-
-After you have `config/models/pool_billiard_best.pt` (or `pool_billiard_preview.pt`):
+Or start from the 3-epoch preview weights (slightly faster convergence):
 
 ```bash
 yolo detect train \
   model=config/models/pool_billiard_preview.pt \
-  data="Datasets/my_red_felt/data.yaml" \
-  epochs=30 \
+  data="Datasets/pool_combined/data.yaml" \
+  epochs=80 \
   imgsz=640 \
   batch=8 \
-  name=my_red_felt_ft \
+  name=pool_combined \
   project=runs
 ```
 
-### Merge datasets in Roboflow (cleanest)
+Weights: `runs/detect/pool_combined/weights/best.pt`
 
-Upload Pi captures into the same project as Pool Billiard → export one YOLOv8 zip → train once on the combined set.
+```bash
+cp runs/detect/pool_combined/weights/best.pt config/models/pool_combined_best.pt
+```
+
+Point `config/yolo_preview.yaml` (or `default.yaml`):
+
+```yaml
+yolo_model: config/models/pool_combined_best.pt
+yolo_class_ids: all
+yolo_confidence: 0.35
+yolo_cue_class_ids: [1]
+yolo_exclude_class_names: [break]
+```
+
+### Only your 25 images (not recommended alone)
+
+Too few for a 12-class model from scratch. If you only train on `my_red_felt/data.yaml` (2 classes), you must change the app config to match 2 classes only.
+
+### Merge in Roboflow (alternative)
+
+Upload Pi captures into the same Roboflow project as Pool Billiard, label with **full** class list, export YOLOv8 once, skip the merge script.
 
 ---
 
