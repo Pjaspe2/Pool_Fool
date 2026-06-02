@@ -90,7 +90,7 @@ network:
   overlay_udp_host: "pool.local"
 ```
 
-Switch back to `detector: classical` anytime if you want to compare.
+Ball detection is **YOLO-only** (no Hough/felt pipeline).
 
 ### 3. Calibrate **once** using the Pi stream (same view as production)
 
@@ -124,7 +124,7 @@ You should see `Ball detector: yolo` in the terminal.
 
 **Orange quad** = play-region mask from `play_region.npz` — saved calibration, **not** the ball detector. It persists across classical/YOLO and is correct only if the camera view still matches when you ran `play-region` (re-do after moving camera Mac → Pi).
 
-**Still classical:** cue-stick direction (Hough lines on edges). Only **ball** detection switched to YOLO.
+Cue-stick Hough is **off** by default (`use_cue_line: false`). With two balls, `aim_mode: cue_to_object` draws a line cue→nearest object for testing.
 
 The app does **not** draw on the browser stream. If no window appears, check the Terminal for `Stream connected` or `Stream error`, and look behind other windows for `pool_fool_debug`.
 
@@ -138,10 +138,12 @@ First YOLO frame can take **10–30 s** after the stream connects (model warmup)
 |--------|-----|
 | No balls detected | Lower `yolo_confidence` (try `0.25`) |
 | Too many false balls (pockets, reflections) | Raise `yolo_confidence` (try `0.45`); run `play-region` calibration |
-| Mac feels sluggish | Set `yolo_imgsz: 416`; close other apps |
+| Mac feels sluggish | Set `yolo_imgsz: 416` or `yolo_frame_stride: 3` |
 | Wrong cue ball | Press `r` while cue ball is visible |
+| MOVING when ball is still | Lower `ball_tracker_alpha` (e.g. `0.08`); raise `stationary_velocity_mm_s` (e.g. `60`) |
+| One white ball, weak detect | Lower `yolo_confidence` to `0.18`; keep `yolo_clahe: true` |
 
-COCO class **32** is generic “sports ball” — works for pool balls but is not pool-specific. A custom-trained model would be a later step.
+COCO class **32** is generic “sports ball” — a custom pool-ball model would help most long-term.
 
 ## Cannot open the stream from the Mac?
 

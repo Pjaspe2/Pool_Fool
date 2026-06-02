@@ -34,17 +34,13 @@ pool-fool-calibrate lens-estimate --camera-height-mm 1500
 
 See [docs/calibration-without-printer.md](docs/calibration-without-printer.md) for Xbox boxes, skipping lens, etc.
 
-### Ball detection modes
-
-Default is **classical** (Hough circles + red felt mask). If detections are noisy, try **YOLO**:
+### Ball detection (YOLO)
 
 ```bash
 pip install -e ".[yolo]"
 ```
 
-In `config/default.yaml` set `vision.detector: yolo` (uses COCO “sports ball”, class 32).
-
-Tune red felt: `pool-fool-calibrate felt-sample --camera 0`
+Uses YOLOv8n COCO class 32 (“sports ball”). Tune in `config/default.yaml` under `vision:` (`yolo_confidence`, `ball_tracker_alpha`, etc.). See [docs/pi-desktop-yolo.md](docs/pi-desktop-yolo.md).
 
 ### Play-area mask (ignore pockets / rails)
 

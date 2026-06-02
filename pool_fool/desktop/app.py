@@ -84,16 +84,12 @@ def run_loop(
         ball_detector = create_ball_detector(vision, table, H, play_region)
     except ImportError as e:
         print(e)
-        print("Falling back to classical detector.")
-        vision = {**vision, "detector": "classical"}
-        ball_detector = create_ball_detector(vision, table, H, play_region)
-    detector_mode = str(vision.get("detector", "classical")).lower()
+        return 1
     detector_label = detector_mode_label(vision)
     print(f"Ball detector: {detector_label}")
-    if detector_mode == "yolo":
-        print("  YOLO = magenta/green boxes on balls. Orange quad = play-region cal (not Hough).")
-        print("  Cue stick line still uses classical edge detection.")
-    cue_detector = CueDetector(vision, H, play_region)
+    print("  Magenta/green boxes = YOLO. Orange quad = play-region mask (saved cal).")
+    use_cue_line = bool(vision.get("use_cue_line", False))
+    cue_detector: CueDetector | None = CueDetector(vision, H, play_region) if use_cue_line else None
     side_index = _side_camera_index(cfg.get("cameras", {}))
     side_cap: cv2.VideoCapture | None = None
     side_cue_detector: CueDetector | None = None
@@ -108,8 +104,9 @@ def run_loop(
         match_gate_mm=float(vision.get("ball_tracker_match_gate_mm", 80.0)),
     )
     gate = StationaryGate(
-        float(vision.get("stationary_velocity_mm_s", 25.0)),
-        still_frames_required=int(vision.get("stationary_frames_required", 5)),
+        float(vision.get("stationary_velocity_mm_s", 45.0)),
+        still_frames_required=int(vision.get("stationary_frames_required", 8)),
+        velocity_ema_alpha=float(vision.get("stationary_velocity_ema_alpha", 0.2)),
     )
 
     overlay_renderer: OverlayRenderer | None = None
@@ -209,7 +206,7 @@ def run_loop(
 
         cue_ball, objects = ball_detector.split_cue_and_objects(balls)
         result = None
-        if cue_ball is not None:
+        if cue_ball is not None and cue_detector is not None:
             cue_line = cue_detector.detect(frame, cue_ball.center_mm)
             if side_cap is not None and side_cue_detector is not None:
                 ret_side, side_frame = side_cap.read()
@@ -226,7 +223,19 @@ def run_loop(
                     angle_threshold_deg=float(vision.get("aim_angle_threshold_deg", 12.0)),
                 )
                 last_result = result
-        elif last_result is not None and cue_detector._last_direction is not None:
+        elif cue_ball is not None and objects and vision.get("aim_mode") == "cue_to_object":
+            obj = min(objects, key=lambda o: float(np.linalg.norm(o.center_mm - cue_ball.center_mm)))
+            aim = obj.center_mm - cue_ball.center_mm
+            if float(np.linalg.norm(aim)) > table.ball_radius_mm:
+                result = solve_shot(
+                    cue_ball.center_mm,
+                    aim,
+                    [o.center_mm for o in objects],
+                    table,
+                    angle_threshold_deg=float(vision.get("aim_angle_threshold_deg", 12.0)),
+                )
+                last_result = result
+        elif last_result is not None and cue_detector is not None and cue_detector._last_direction is not None:
             pass
 
         if result is None and last_result is not None:
@@ -236,9 +245,8 @@ def run_loop(
         if play_region is not None:
             play_region.draw(vis, H_inv)
 
-        use_yolo_vis = detector_mode == "yolo"
         for b in balls:
-            if use_yolo_vis and b.bbox_px is not None:
+            if b.bbox_px is not None:
                 x1, y1, x2, y2 = b.bbox_px
                 color = (0, 255, 120) if b.is_cue else (255, 0, 255)
                 cv2.rectangle(vis, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
@@ -255,12 +263,12 @@ def run_loop(
             (20, 28),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
-            (0, 255, 255) if use_yolo_vis else (180, 220, 255),
+            (0, 255, 255),
             2,
         )
         cv2.putText(
             vis,
-            f"tracked {len(balls)}  raw {raw_count}  |  cue line: Hough",
+            f"tracked {len(balls)}  raw {raw_count}",
             (20, 52),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,

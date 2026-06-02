@@ -57,12 +57,15 @@ class StationaryGate:
         velocity_threshold_mm_s: float,
         *,
         still_frames_required: int = 4,
+        velocity_ema_alpha: float = 0.25,
     ) -> None:
         self.threshold = velocity_threshold_mm_s
         self.still_frames_required = still_frames_required
+        self.velocity_ema_alpha = velocity_ema_alpha
         self.stationary = False
         self.max_velocity_mm_s = 0.0
         self._prev: dict[int, tuple[np.ndarray, float]] = {}
+        self._vel_ema: dict[int, float] = {}
         self._still_streak = 0
 
     def update(self, balls: list[DetectedBall]) -> bool:
@@ -77,6 +80,7 @@ class StationaryGate:
             return False
 
         max_v = 0.0
+        a = self.velocity_ema_alpha
         for b in balls:
             if b.track_id < 0:
                 continue
@@ -85,11 +89,15 @@ class StationaryGate:
                 prev_pos, prev_t = self._prev[tid]
                 dt = now - prev_t
                 if dt > 1e-4:
-                    v = float(np.linalg.norm(b.center_mm - prev_pos)) / dt
-                    max_v = max(max_v, v)
+                    v_raw = float(np.linalg.norm(b.center_mm - prev_pos)) / dt
+                    prev_ema = self._vel_ema.get(tid, v_raw)
+                    v_smooth = a * v_raw + (1.0 - a) * prev_ema
+                    self._vel_ema[tid] = v_smooth
+                    max_v = max(max_v, v_smooth)
             self._prev[tid] = (b.center_mm.copy(), now)
 
         self._prev = {k: v for k, v in self._prev.items() if k in active_ids}
+        self._vel_ema = {k: v for k, v in self._vel_ema.items() if k in active_ids}
         self.max_velocity_mm_s = max_v
 
         if max_v < self.threshold:

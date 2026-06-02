@@ -4,7 +4,7 @@ from typing import Protocol
 
 import numpy as np
 
-from pool_fool.desktop.vision.balls import BallDetector, DetectedBall
+from pool_fool.desktop.vision.balls import DetectedBall
 from pool_fool.shared.play_region import PlayRegion
 from pool_fool.shared.table import TableSpec
 
@@ -18,12 +18,9 @@ class BallDetectorProtocol(Protocol):
 
 
 def detector_mode_label(vision_cfg: dict) -> str:
-    mode = str(vision_cfg.get("detector", "classical")).lower()
-    if mode == "yolo":
-        model = vision_cfg.get("yolo_model", "yolov8n.pt")
-        conf = vision_cfg.get("yolo_confidence", 0.35)
-        return f"YOLO {model} conf={conf}"
-    return "classical Hough+HSV"
+    model = vision_cfg.get("yolo_model", "yolov8n.pt")
+    conf = vision_cfg.get("yolo_confidence", 0.25)
+    return f"YOLO {model} conf={conf}"
 
 
 def create_ball_detector(
@@ -32,9 +29,6 @@ def create_ball_detector(
     H: np.ndarray,
     play_region: PlayRegion | None,
 ) -> BallDetectorProtocol:
-    mode = str(vision_cfg.get("detector", "classical")).lower()
-    if mode == "yolo":
-        from pool_fool.desktop.vision.yolo_balls import YoloBallDetector
+    from pool_fool.desktop.vision.yolo_balls import YoloBallDetector
 
-        return YoloBallDetector(table, vision_cfg, H, play_region)
-    return BallDetector(table, vision_cfg, H, play_region)
+    return YoloBallDetector(table, vision_cfg, H, play_region)
