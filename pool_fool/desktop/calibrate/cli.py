@@ -17,6 +17,9 @@ from pool_fool.shared.frame_pipeline import build_lens_corrector, preprocess_fra
 from pool_fool.shared.camera import (
     CameraOpenError,
     capture_frame,
+    capture_stream_frame,
+    is_stream_url,
+    parse_camera_arg,
     print_camera_doctor,
     probe_modes,
 )
@@ -114,7 +117,7 @@ def _print_camera_error(exc: CameraOpenError) -> None:
 
 
 def _load_frame(
-    camera: int,
+    camera: str | int,
     cfg: dict,
     image_path: Path | None,
     *,
@@ -132,14 +135,19 @@ def _load_frame(
                 frame = preprocess_frame(frame, corrector)
         return frame
     try:
-        frame, idx_used, backend = capture_frame(
-            camera, cfg.get("cameras", {}), wide=wide, scan_indices=True
-        )
-        print(
-            f"Captured {frame.shape[1]}x{frame.shape[0]} from camera index {idx_used} ({backend})"
-        )
-        if idx_used != camera:
-            print(f"  (requested --camera {camera}; update config if this is your Logitech)")
+        if is_stream_url(camera):
+            frame = capture_stream_frame(str(camera))
+            print(f"Captured {frame.shape[1]}x{frame.shape[0]} from stream {camera}")
+        else:
+            idx = int(camera)
+            frame, idx_used, backend = capture_frame(
+                idx, cfg.get("cameras", {}), wide=wide, scan_indices=True
+            )
+            print(
+                f"Captured {frame.shape[1]}x{frame.shape[0]} from camera index {idx_used} ({backend})"
+            )
+            if idx_used != idx:
+                print(f"  (requested --camera {idx}; update config if this is your Logitech)")
         if root is not None:
             corrector = build_lens_corrector(cfg, root)
             if corrector:
@@ -186,7 +194,7 @@ def run_felt_sample(config_path: Path, camera: int, image_path: Path | None) -> 
 
 def capture_snapshot(
     config_path: Path,
-    camera: int,
+    camera: str | int,
     output: Path,
     *,
     wide: bool = False,
@@ -222,7 +230,7 @@ def run_probe(camera: int) -> int:
 
 def calibrate_table(
     config_path: Path,
-    camera: int,
+    camera: str | int,
     *,
     image_path: Path | None = None,
     wide: bool = False,
@@ -271,7 +279,7 @@ def calibrate_table(
     return 0
 
 
-def calibrate_projector(config_path: Path, camera: int) -> int:
+def calibrate_projector(config_path: Path, camera: str | int) -> int:
     cfg = load_config(config_path)
     root = config_path.resolve().parent.parent
     table_path = resolve_path(cfg, "table_homography", root)
@@ -331,7 +339,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p_table = sub.add_parser("table", help="Overhead camera -> table plane")
     p_table.add_argument("--config", type=Path, default=Path("config/default.yaml"))
-    p_table.add_argument("--camera", type=int, default=0)
+    p_table.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Camera index or MJPEG URL (e.g. http://pool.local:8080/stream.mjpg)",
+    )
     p_table.add_argument("--image", type=Path, default=None)
     p_table.add_argument("--wide", action="store_true", help="Use wide FOV capture settings")
     p_table.add_argument(
@@ -348,7 +361,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p_cap = sub.add_parser("capture", help="Save one camera frame for offline calibration")
     p_cap.add_argument("--config", type=Path, default=Path("config/default.yaml"))
-    p_cap.add_argument("--camera", type=int, default=0)
+    p_cap.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Camera index or MJPEG URL",
+    )
     p_cap.add_argument("--output", type=Path, default=Path("config/calibration/snapshot.jpg"))
     p_cap.add_argument("--wide", action="store_true", help="640x480 + min zoom for widest view")
 
@@ -406,7 +424,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Click 4 corners: detection only inside this quad (excludes pockets)",
     )
     p_play.add_argument("--config", type=Path, default=Path("config/default.yaml"))
-    p_play.add_argument("--camera", type=int, default=0)
+    p_play.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Camera index or MJPEG URL (live frame; no --image needed)",
+    )
     p_play.add_argument("--image", type=Path, default=None)
 
     p_felt = sub.add_parser("felt-sample", help="Hover mouse to read HSV on red felt")
@@ -422,14 +445,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "table":
         return calibrate_table(
             args.config,
-            args.camera,
+            parse_camera_arg(args.camera),
             image_path=args.image,
             wide=args.wide,
             region=args.region,
             dst_corners_mm=args.dst_corners_mm,
         )
     if args.command == "capture":
-        return capture_snapshot(args.config, args.camera, args.output, wide=args.wide)
+        return capture_snapshot(
+            args.config, parse_camera_arg(args.camera), args.output, wide=args.wide
+        )
     if args.command == "probe":
         return run_probe(args.camera)
     if args.command == "doctor":
@@ -464,7 +489,10 @@ def main(argv: list[str] | None = None) -> int:
             output=args.output,
         )
     if args.command == "play-region":
-        return calibrate_play_region(args.config, image_path=args.image, camera=args.camera)
+        cam = parse_camera_arg(args.camera)
+        if args.image is not None:
+            cam = 0  # unused when --image set
+        return calibrate_play_region(args.config, image_path=args.image, camera=cam)
     if args.command == "felt-sample":
         return run_felt_sample(args.config, args.camera, args.image)
     if args.command == "projector":

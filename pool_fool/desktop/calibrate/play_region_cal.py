@@ -13,7 +13,7 @@ def calibrate_play_region(
     config_path: Path,
     *,
     image_path: Path | None = None,
-    camera: int = 0,
+    camera: str | int = 0,
 ) -> int:
     from pool_fool.desktop.calibrate.cli import CornerPicker, _load_frame
 

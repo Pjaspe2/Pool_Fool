@@ -16,6 +16,17 @@ WIDE_MODE_CANDIDATES: list[tuple[int, int]] = [
 ]
 
 
+def is_stream_url(source: str | int) -> bool:
+    return isinstance(source, str) and source.startswith(("http://", "https://", "rtsp://"))
+
+
+def parse_camera_arg(raw: str) -> str | int:
+    """CLI value: integer index or MJPEG/RTSP URL."""
+    if raw.isdigit():
+        return int(raw)
+    return raw
+
+
 def _is_macos() -> bool:
     return platform.system() == "Darwin"
 
@@ -187,6 +198,31 @@ def capture_frame(
     if last_err:
         msg += f" Last attempt: {last_err}."
     raise CameraOpenError(msg, index=index, hints=hints)
+
+
+def capture_stream_frame(url: str, *, attempts: int = 60) -> Any:
+    """Read one JPEG frame from an MJPEG/RTSP URL."""
+    cap = cv2.VideoCapture(url)
+    if not cap.isOpened():
+        raise CameraOpenError(
+            f"Cannot open stream: {url}",
+            index=-1,
+            hints=[
+                "Close browser tabs on /stream.mjpg (Pi serves one client on older builds).",
+                "Check pool-fool-edge is running on the Pi.",
+            ],
+        )
+    try:
+        ret, frame = read_frame_with_warmup(cap, attempts=attempts, delay_s=0.1)
+        if not ret or frame is None:
+            raise CameraOpenError(
+                f"Stream opened but no frame: {url}",
+                index=-1,
+                hints=["Retry in a few seconds; ensure the Pi camera is connected."],
+            )
+        return frame
+    finally:
+        cap.release()
 
 
 def probe_modes(index: int) -> list[dict[str, Any]]:
