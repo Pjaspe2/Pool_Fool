@@ -111,10 +111,10 @@ yolo detect train \
   imgsz=640 \
   batch=8 \
   name=pool_billiard \
-  project=runs
+  project=.
 ```
 
-Weights end up at: `runs/detect/pool_billiard/weights/best.pt`  
+Weights end up at: `runs/detect/pool_billiard/weights/best.pt` (use `project=.` — not `project=runs`, which nests an extra `runs/` folder).  
 (~1–2 hours on Mac CPU for 80 epochs; a 3-epoch test run takes ~5 min.)
 
 - First run may download `yolov8n.pt` again (normal).

@@ -151,7 +151,7 @@ def main() -> int:
     print("Next:")
     print(
         '  yolo detect train model=yolov8n.pt '
-        f'data="{out / "data.yaml"}" epochs=80 imgsz=640 batch=8 name=pool_combined project=runs'
+        f'data="{out / "data.yaml"}" epochs=80 imgsz=640 batch=8 name=pool_combined project=.'
     )
     return 0
 

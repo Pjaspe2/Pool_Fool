@@ -8,7 +8,7 @@ table:
   ball_radius_mm: 28.575
 
 vision:
-  yolo_model: config/models/pool_billiard_preview.pt
+  yolo_model: config/models/pool_combined_best.pt
   yolo_class_ids: all
   yolo_confidence: 0.30
   yolo_cue_class_ids: [1]

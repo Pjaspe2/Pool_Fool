@@ -155,7 +155,7 @@ yolo detect train \
   imgsz=640 \
   batch=8 \
   name=pool_combined \
-  project=runs
+  project=.
 ```
 
 Or start from the 3-epoch preview weights (slightly faster convergence):
@@ -168,13 +168,25 @@ yolo detect train \
   imgsz=640 \
   batch=8 \
   name=pool_combined \
-  project=runs
+  project=.
 ```
 
-Weights: `runs/detect/pool_combined/weights/best.pt`
+Weights (use `project=.` so the path is not nested):
+
+```text
+runs/detect/pool_combined/weights/best.pt
+```
+
+If you used `project=runs` by mistake, weights may be here instead:
+
+```text
+runs/detect/runs/pool_combined/weights/best.pt
+```
 
 ```bash
 cp runs/detect/pool_combined/weights/best.pt config/models/pool_combined_best.pt
+# or:
+cp runs/detect/runs/pool_combined/weights/best.pt config/models/pool_combined_best.pt
 ```
 
 Point `config/yolo_preview.yaml` (or `default.yaml`):
