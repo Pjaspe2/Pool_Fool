@@ -57,3 +57,16 @@ class PlayRegion:
     ) -> PlayRegion:
         mm = [image_to_table(H, pt) for pt in image_corners]
         return cls(np.array(mm, dtype=np.float64))
+
+    def expanded(self, scale: float, table) -> PlayRegion:
+        """
+        Scale the play quad outward from its center (scale > 1 = larger sensing area).
+
+        Corners are clipped to the table rectangle afterward.
+        """
+        if scale <= 0 or abs(scale - 1.0) < 1e-6:
+            return self
+        center = self.corners_mm.mean(axis=0)
+        out = center + (self.corners_mm - center) * float(scale)
+        clipped = np.array([table.clip_point(p) for p in out], dtype=np.float64)
+        return PlayRegion(clipped)

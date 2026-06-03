@@ -69,6 +69,10 @@ def run_loop(
     H_inv = np.linalg.inv(H)
     play_path = resolve_path(cfg, "play_region", root)
     play_region = PlayRegion.load(play_path)
+    expand_scale = float(vision.get("play_region_expand_scale", 1.0))
+    if play_region is not None and expand_scale > 1.0:
+        play_region = play_region.expanded(expand_scale, table)
+        print(f"Play region expanded {expand_scale:.0%} from saved calibration")
     if play_region is None:
         print("No play region mask — pockets/rails may cause false detections.")
         print("  Run: pool-fool-calibrate play-region --config", config_path)
@@ -225,22 +229,10 @@ def run_loop(
                     angle_threshold_deg=float(vision.get("aim_angle_threshold_deg", 12.0)),
                 )
                 last_result = result
-        elif cue_ball is not None and objects and vision.get("aim_mode") == "cue_to_object":
-            obj = min(objects, key=lambda o: float(np.linalg.norm(o.center_mm - cue_ball.center_mm)))
-            aim = obj.center_mm - cue_ball.center_mm
-            if float(np.linalg.norm(aim)) > table.ball_radius_mm:
-                result = solve_shot(
-                    cue_ball.center_mm,
-                    aim,
-                    [o.center_mm for o in objects],
-                    table,
-                    angle_threshold_deg=float(vision.get("aim_angle_threshold_deg", 12.0)),
-                )
-                last_result = result
         elif last_result is not None and cue_detector is not None and cue_detector._last_direction is not None:
             pass
 
-        if result is None and last_result is not None:
+        if result is None and last_result is not None and use_cue_line:
             result = last_result
 
         vis = draw_debug_frame(frame, H_inv, result, cfg["overlay"], table) if result is not None else frame.copy()

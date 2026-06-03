@@ -250,7 +250,10 @@ def run_annotator(
 
     print("Pool Fool YOLO annotator")
     print(f"  Output: {output_dir.resolve()}")
-    print(f"  Classes ({len(class_names)}): {', '.join(class_names)}")
+    print(f"  Classes ({len(class_names)}):")
+    for i, name in enumerate(class_names):
+        key_hint = str(i) if i <= 9 else "Tab"
+        print(f"    [{key_hint}] {i}: {name}")
     for line in [
         "Drag: box   Tab/,: class   0-9: class id",
         "g: grab   s: save   p: prev image (fix mistakes)   n: next",

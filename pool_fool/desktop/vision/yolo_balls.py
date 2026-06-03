@@ -32,7 +32,10 @@ def _resolve_exclude_class_ids(vision_cfg: dict, model) -> set[int]:
         name_map = {int(k): str(v).lower() for k, v in names.items()}
     else:
         name_map = {i: str(n).lower() for i, n in enumerate(names)}
-    for sub in vision_cfg.get("yolo_exclude_class_names", ["pocket", "bag", "rack", "table", "flag"]):
+    for sub in vision_cfg.get(
+        "yolo_exclude_class_names",
+        ["break", "pocket", "bag", "rack", "table", "flag", "cue_stick", "cue stick", "stick"],
+    ):
         sub = sub.lower()
         for cid, cname in name_map.items():
             if sub in cname:

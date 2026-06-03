@@ -27,7 +27,9 @@ vision:
   stationary_velocity_ema_alpha: 0.2
   aim_angle_threshold_deg: 12.0
   use_cue_line: false
-  aim_mode: cue_to_object
+  aim_mode: none
+  play_region_expand_scale: 1.2
+  yolo_exclude_class_names: [break, pocket, bag, rack, table, flag, cue_stick, cue stick, stick]
 
 overlay:
   line_color_bgr: [0, 255, 200]

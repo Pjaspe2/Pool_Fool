@@ -20,8 +20,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--classes-yaml",
         type=Path,
-        default=Path("Datasets/Pool Billiard.yolov8/data.yaml"),
-        help="Use class names from an existing Roboflow data.yaml",
+        default=Path("config/annotation_classes_v2.yaml"),
+        help="Class names (v2: balls + Pocket + Cue_Stick)",
     )
     parser.add_argument(
         "--simple",

@@ -23,23 +23,18 @@ SIMPLE_TO_FULL: dict[int, int] = {
     1: 6,  # Object_Ball
 }
 
-FULL_NAMES = [
-    "Break",
-    "Cue_Ball",
-    "Eight",
-    "Five",
-    "Four",
-    "Nine",
-    "Object_Ball",
-    "One",
-    "Seven",
-    "Six",
-    "Three",
-    "Two",
-]
+DEFAULT_CLASSES = Path("config/annotation_classes_v2.yaml")
 
 
-def remap_label(src: Path, dst: Path) -> None:
+def load_class_names(path: Path) -> list[str]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    names = data.get("names", [])
+    if isinstance(names, dict):
+        return [names[k] for k in sorted(names, key=lambda x: int(x))]
+    return list(names)
+
+
+def remap_label_simple(src: Path, dst: Path) -> None:
     lines_out: list[str] = []
     for line in src.read_text(encoding="utf-8").splitlines():
         parts = line.strip().split()
@@ -63,7 +58,7 @@ def copy_split(
     *,
     prefix: str = "",
     repeat: int = 1,
-    remap: bool = False,
+    remap_simple: bool = False,
 ) -> int:
     src_images = src_root / split / "images"
     src_labels = src_root / split / "labels"
@@ -81,8 +76,8 @@ def copy_split(
             out_lbl = dst_labels / f"{out_stem}.txt"
             shutil.copy2(img, out_img)
             if label.exists():
-                if remap:
-                    remap_label(label, out_lbl)
+                if remap_simple:
+                    remap_label_simple(label, out_lbl)
                 else:
                     shutil.copy2(label, out_lbl)
             n += 1
@@ -112,7 +107,20 @@ def main() -> int:
         default=4,
         help="How many times to copy each custom image (weight red felt higher)",
     )
+    parser.add_argument(
+        "--classes-yaml",
+        type=Path,
+        default=DEFAULT_CLASSES,
+        help="Output class list (e.g. config/annotation_classes_v2.yaml)",
+    )
     args = parser.parse_args()
+
+    class_names = load_class_names(args.classes_yaml)
+    custom_nc = 2
+    custom_yaml = args.custom / "data.yaml"
+    if custom_yaml.exists():
+        custom_nc = int(yaml.safe_load(custom_yaml.read_text())["nc"])
+    remap_simple = custom_nc == 2 and len(class_names) > 2
 
     out = args.output
     train_img = out / "train" / "images"
@@ -131,15 +139,15 @@ def main() -> int:
         train_lbl,
         prefix="red_",
         repeat=max(1, args.custom_repeat),
-        remap=True,
+        remap_simple=remap_simple,
     )
 
     data_yaml = {
         "train": "train/images",
         "val": "valid/images",
         "test": "valid/images",
-        "nc": len(FULL_NAMES),
-        "names": FULL_NAMES,
+        "nc": len(class_names),
+        "names": class_names,
     }
     (out / "data.yaml").write_text(yaml.dump(data_yaml, default_flow_style=False), encoding="utf-8")
 

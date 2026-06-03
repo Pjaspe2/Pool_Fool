@@ -40,7 +40,7 @@ See [docs/calibration-without-printer.md](docs/calibration-without-printer.md) f
 pip install -e ".[yolo]"
 ```
 
-Default: **YOLOv8n + COCO class 32** (generic “sports ball”, not billiards). For better detection, train on a pool dataset: [docs/pool-yolo-custom-model.md](docs/pool-yolo-custom-model.md).
+Default: **YOLOv8n + COCO class 32** (generic “sports ball”, not billiards). For better detection, train on a pool dataset: [docs/pool-yolo-custom-model.md](docs/pool-yolo-custom-model.md). Roadmap (pockets, cue stick): [docs/roadmap-v2.md](docs/roadmap-v2.md).
 
 ### Play-area mask (ignore pockets / rails)
 

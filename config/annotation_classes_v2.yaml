@@ -1,0 +1,19 @@
+# Full labeling schema for next training run (balls + pockets + cue).
+# Use: pool-fool-annotate --classes-yaml config/annotation_classes_v2.yaml
+
+names:
+  - Break
+  - Cue_Ball
+  - Eight
+  - Five
+  - Four
+  - Nine
+  - Object_Ball
+  - One
+  - Seven
+  - Six
+  - Three
+  - Two
+  - Pocket
+  - Cue_Stick
+nc: 14
