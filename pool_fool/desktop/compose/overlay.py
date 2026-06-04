@@ -55,29 +55,55 @@ class OverlayRenderer:
             message=result.message,
         )
 
+    def pocket_shot_to_guide(self, result: PocketShotResult) -> ShotGuide:
+        from pool_fool.shared.schemas import shot_from_pocket_shot
+
+        return shot_from_pocket_shot(result)
+
     def draw_on_camera(self, frame: np.ndarray, result: GhostBallResult) -> np.ndarray:
         return draw_debug_frame(frame, self.H_cam_inv, result, self.cfg, self.table)
 
     def render_projector_frame(
         self,
-        result: GhostBallResult,
+        result: GhostBallResult | PocketShotResult,
         width: int,
         height: int,
     ) -> np.ndarray:
         """Black canvas with bright lines in projector pixel coordinates."""
+        from pool_fool.shared.schemas import shot_from_pocket_shot
+
+        if isinstance(result, PocketShotResult):
+            guide = shot_from_pocket_shot(result)
+        else:
+            guide = self.shot_to_guide(result)
+        return self.render_projector_guide(guide, width, height)
+
+    def render_projector_guide(self, guide: ShotGuide, width: int, height: int) -> np.ndarray:
         canvas = np.zeros((height, width, 3), dtype=np.uint8)
-        if not result.valid or self.H_proj is None or self.H_proj_inv is None:
+        if not guide.valid or self.H_proj_inv is None:
             return canvas
 
         line_color = tuple(self.cfg.get("line_color_bgr", [0, 255, 200]))
+        pocket_color = tuple(self.cfg.get("pocket_line_color_bgr", [0, 200, 255]))
         ghost_color = tuple(self.cfg.get("ghost_ball_color_bgr", [0, 180, 255]))
         thickness = int(self.cfg.get("line_thickness_px", 3))
         gr = int(self.cfg.get("ghost_ball_radius_px", 12))
 
-        pts_mm = [result.cue, result.ghost, result.object_ball]
-        pts_px = [self._table_to_projector(p) for p in pts_mm]
+        cue = np.array(guide.cue_mm, dtype=np.float64)
+        ghost = np.array(guide.ghost_mm, dtype=np.float64)
+        obj = np.array(guide.object_mm, dtype=np.float64)
+        pts_px = [
+            self._table_to_projector(cue),
+            self._table_to_projector(ghost),
+            self._table_to_projector(obj),
+        ]
         for i in range(len(pts_px) - 1):
             cv2.line(canvas, pts_px[i], pts_px[i + 1], line_color, thickness, cv2.LINE_AA)
+        if len(guide.pocket_mm) >= 2:
+            pocket = np.array(guide.pocket_mm, dtype=np.float64)
+            px_pocket = self._table_to_projector(pocket)
+            cv2.line(canvas, pts_px[2], px_pocket, pocket_color, thickness, cv2.LINE_AA)
+            cv2.circle(canvas, px_pocket, max(6, gr // 2), pocket_color, 2, cv2.LINE_AA)
         cv2.circle(canvas, pts_px[1], gr, ghost_color, 2, cv2.LINE_AA)
         cv2.circle(canvas, pts_px[2], gr // 2, line_color, 2, cv2.LINE_AA)
         return canvas

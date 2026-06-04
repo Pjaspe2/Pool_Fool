@@ -68,6 +68,7 @@ class ProjectorDisplay:
         thickness = int(self.cfg.get("line_thickness_px", 3))
         gr = int(self.cfg.get("ghost_ball_radius_px", 12))
 
+        pocket_color = tuple(self.cfg.get("pocket_line_color_bgr", [0, 200, 255]))
         pts = [
             table_to_image(self.H_proj_inv, cue),
             table_to_image(self.H_proj_inv, ghost),
@@ -75,6 +76,11 @@ class ProjectorDisplay:
         ]
         for i in range(len(pts) - 1):
             cv2.line(canvas, pts[i], pts[i + 1], line_color, thickness, cv2.LINE_AA)
+        if len(shot.pocket_mm) >= 2:
+            pocket = np.array(shot.pocket_mm, dtype=np.float64)
+            px_pocket = table_to_image(self.H_proj_inv, pocket)
+            cv2.line(canvas, pts[2], px_pocket, pocket_color, thickness, cv2.LINE_AA)
+            cv2.circle(canvas, px_pocket, max(6, gr // 2), pocket_color, 2, cv2.LINE_AA)
         cv2.circle(canvas, pts[1], gr, ghost_color, 2, cv2.LINE_AA)
         cv2.circle(canvas, pts[2], gr // 2, line_color, 2, cv2.LINE_AA)
         return canvas

@@ -468,15 +468,28 @@ def run_loop(
 
         cv2.imshow("pool_fool_debug", vis)
 
-        if show_projector_preview and overlay_renderer and result is not None:
+        if show_projector_preview and overlay_renderer:
             pw = cfg["projector"]["display_width"]
             ph = cfg["projector"]["display_height"]
-            proj = overlay_renderer.render_projector_frame(result, pw, ph)
-            cv2.imshow("pool_fool_projector_preview", proj)
+            if poc_shot is not None and poc_shot.valid:
+                proj = overlay_renderer.render_projector_frame(poc_shot, pw, ph)
+            elif result is not None and result.valid:
+                proj = overlay_renderer.render_projector_frame(result, pw, ph)
+            else:
+                proj = None
+            if proj is not None:
+                cv2.imshow("pool_fool_projector_preview", proj)
 
-        if sender and result is not None and overlay_renderer:
-            guide = overlay_renderer.shot_to_guide(result)
-            msg = OverlayMessage(
+        if sender and overlay_renderer:
+            guide = None
+            if poc_shot is not None and poc_shot.valid:
+                guide = overlay_renderer.pocket_shot_to_guide(poc_shot)
+            elif result is not None and result.valid:
+                guide = overlay_renderer.shot_to_guide(result)
+            if guide is None:
+                pass
+            else:
+                msg = OverlayMessage(
                 timestamp_ms=int(time.time() * 1000),
                 stationary=stationary,
                 shot=guide,
@@ -485,8 +498,8 @@ def run_loop(
                     for b in balls
                 ],
             )
-            if stationary:
-                sender.send(msg)
+                if stationary:
+                    sender.send(msg)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):

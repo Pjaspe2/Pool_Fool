@@ -147,16 +147,26 @@ def run_display_mode(config_path: Path, overlay_port: int) -> int:
         return 1
 
     print(f"Listening for overlay UDP on port {overlay_port}")
+    print("Projector shows lines when Mac runs: pool-fool-app ... --send-overlay")
     try:
         while True:
             display.show(latest[0])
+            time.sleep(0.02)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     except KeyboardInterrupt:
-        pass
+        print("\nStopping overlay display...")
     finally:
         receiver.stop()
-        cv2.destroyAllWindows()
+        if display._initialized:
+            try:
+                cv2.destroyWindow(display.window_name)
+            except cv2.error:
+                pass
+        try:
+            cv2.destroyAllWindows()
+        except cv2.error:
+            pass
     return 0
 
 
