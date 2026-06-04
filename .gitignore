@@ -8,6 +8,7 @@ dist/
 *.egg-info/
 .DS_Store
 Datasets/
+logs/
 runs/
 *.pt
 config/calibration/*.npz

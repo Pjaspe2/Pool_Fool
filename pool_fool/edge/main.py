@@ -162,15 +162,40 @@ def run_display_mode(config_path: Path, overlay_port: int) -> int:
 
 def run_combined(config_path: Path, camera: int, overlay_port: int, use_rtsp: bool) -> int:
     """Stream video + show projector overlay (typical Pi deployment)."""
+    from pool_fool.shared.config import load_config, resolve_path
+
     stream_exit = threading.Event()
 
     def stream_worker() -> None:
-        run_stream_mode(config_path, camera, use_rtsp)
-        stream_exit.set()
+        try:
+            run_stream_mode(config_path, camera, use_rtsp)
+        finally:
+            stream_exit.set()
 
     t = threading.Thread(target=stream_worker, daemon=True)
     t.start()
     time.sleep(0.5)
+
+    cfg = load_config(config_path)
+    root = config_path.resolve().parent.parent
+    proj_path = resolve_path(cfg, "projector_homography", root)
+    if not proj_path.exists():
+        print(
+            "Note: no projector_homography.npz — MJPEG stream is running; HDMI overlay disabled."
+        )
+        print(
+            f"  Calibrate on the Pi (projector on HDMI): "
+            f"pool-fool-calibrate projector --config {config_path} --camera 0"
+        )
+        print(f"  Or use stream-only: pool-fool-edge --config {config_path} --mode stream")
+        print("  Press Ctrl+C to stop.")
+        try:
+            while not stream_exit.is_set():
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
+        return 0
+
     return run_display_mode(config_path, overlay_port)
 
 

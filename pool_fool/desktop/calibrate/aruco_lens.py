@@ -9,7 +9,7 @@ from cv2 import aruco
 
 from pool_fool.shared.camera import CameraOpenError
 from pool_fool.shared.config import load_config, resolve_path
-from pool_fool.shared.lens import save_lens_calibration
+from pool_fool.shared.lens import mean_reprojection_error_px, save_lens_calibration
 from pool_fool.shared.live_camera import LiveCamera
 
 from pool_fool.desktop.calibrate.screen_warp import ScreenWarp
@@ -99,12 +99,13 @@ def _compose_view(camera_bgr: np.ndarray, warped_bgr: np.ndarray | None) -> np.n
 
 def calibrate_lens_aruco(
     config_path: Path,
-    camera: int,
+    camera: str | int,
     *,
     square_mm: float,
     cols: int = 5,
     rows: int = 7,
-    min_images: int = 5,
+    min_images: int = 12,
+    min_corners: int = 15,
     show_pattern: bool = False,
 ) -> int:
     cfg = load_config(config_path)
@@ -128,10 +129,16 @@ def calibrate_lens_aruco(
     picking_corners = False
     pick_points: list[tuple[int, int]] = []
 
+    stream = isinstance(camera, str) and camera.startswith("http")
+    if stream:
+        print("Pi/stream mode: LEFT panel = overhead camera, pattern on laptop below.")
+    print(f"\nTarget: {min_images}+ samples, {min_corners}+ ChArUco corners each (move pattern a lot).")
+    print("Tip: include poses with pattern near TOP and BOTTOM of the Pi image (fixes bent rails).")
     print("\n=== Controls (focus the ONE capture window) ===")
-    print("  w     = click 4 corners of phone/screen (TL→TR→BR→BL)")
+    print("  w     = click 4 corners of laptop screen (TL→TR→BR→BL) on LEFT view (optional)")
     print("  SPACE or s = SAVE a sample (required before finish)")
-    print("  c     = FINISH calibration (needs 5+ samples)")
+    print("  z     = undo last saved sample")
+    print("  c     = FINISH calibration")
     print("  q     = quit")
     print("  u     = undo corner while picking")
     print("  NOTE: c does NOT capture — use SPACE\n")
@@ -163,6 +170,8 @@ def calibrate_lens_aruco(
 
     try:
         with LiveCamera(camera, cfg.get("cameras", {})) as cam:
+            if stream:
+                print("Using Pi MJPEG reader (avoids OpenCV boundary errors).")
             while True:
                 frame = cam.read()
                 if frame is None:
@@ -186,7 +195,7 @@ def calibrate_lens_aruco(
                         )
 
                 corners, ids, n_corners = _detect_charuco(board, detector, detect_gray)
-                ready = corners is not None and n_corners >= 4
+                ready = corners is not None and n_corners >= min_corners
 
                 if warped_bgr is not None:
                     panel = (
@@ -214,7 +223,7 @@ def calibrate_lens_aruco(
                 color = (0, 255, 0) if ready else (0, 128, 255)
                 cv2.putText(
                     display,
-                    f"samples {len(obj_points)}/{min_images}   corners {n_corners}   warp {'ON' if warp.is_active else 'off'}",
+                    f"samples {len(obj_points)}/{min_images}   corners {n_corners}/{min_corners}   warp {'ON' if warp.is_active else 'off'}",
                     (12, 28),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
@@ -286,8 +295,8 @@ def calibrate_lens_aruco(
                 if capture_key:
                     if not ready or corners is None or ids is None:
                         print(
-                            f"  Capture skipped: only {n_corners} corners detected "
-                            f"(need 4+). Adjust light / square-mm / warp."
+                            f"  Capture skipped: {n_corners} corners "
+                            f"(need {min_corners}+). Adjust light / square-mm / warp / pattern size."
                         )
                         status_msg = f"Not ready ({n_corners} corners)"
                         status_until = time.monotonic() + 3.0
@@ -298,12 +307,20 @@ def calibrate_lens_aruco(
                             board, corners, ids, obj_points, img_points, warp
                         )
                         if ok:
-                            print(f"  >>> captured sample {len(obj_points)} <<<")
+                            n_pts = len(obj_points[-1])
+                            print(f"  >>> captured sample {len(obj_points)} ({n_pts} points) <<<")
                             status_msg = f"Saved sample {len(obj_points)}"
                         else:
                             print(f"  Capture failed: {msg}")
                             status_msg = msg
                         status_until = time.monotonic() + 3.0
+
+                if key == ord("z") and obj_points:
+                    obj_points.pop()
+                    img_points.pop()
+                    print(f"  Undid sample — now {len(obj_points)} saved.")
+                    status_msg = f"Undid — {len(obj_points)} samples"
+                    status_until = time.monotonic() + 2.0
 
                 if key == ord("c"):
                     if len(obj_points) < min_images:
@@ -315,6 +332,19 @@ def calibrate_lens_aruco(
                         status_until = time.monotonic() + 4.0
                         continue
                     break
+    except KeyboardInterrupt:
+        print()
+        if len(obj_points) >= min_images and image_size is not None:
+            print(
+                f"Interrupted — saving calibration from {len(obj_points)} "
+                "in-memory samples (press 'c' next time to avoid this message)."
+            )
+        else:
+            print(
+                f"Interrupted — {len(obj_points)} samples were only in memory; "
+                f"lens.npz was NOT updated (need {min_images}+ and press 'c' to finish)."
+            )
+            return 1
     except CameraOpenError as e:
         print(e)
         for h in e.hints:
@@ -327,14 +357,43 @@ def calibrate_lens_aruco(
         print(f"Need at least {min_images} samples; got {len(obj_points)}.")
         return 1
 
-    ret, camera_matrix, dist_coeffs, _rvecs, _tvecs = cv2.calibrateCamera(
-        obj_points, img_points, image_size, None, None
+    criteria = (
+        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+        100,
+        1e-7,
+    )
+    flags = cv2.CALIB_FIX_ASPECT_RATIO
+    ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
+        obj_points,
+        img_points,
+        image_size,
+        None,
+        None,
+        flags=flags,
+        criteria=criteria,
     )
     if not ret:
         print("calibrateCamera failed")
         return 1
 
+    reproj = mean_reprojection_error_px(
+        obj_points, img_points, camera_matrix, dist_coeffs, rvecs, tvecs
+    )
+    print(f"Mean reprojection error: {reproj:.3f} px", end="")
+    if reproj < 0.5:
+        print(" (excellent)")
+    elif reproj < 1.0:
+        print(" (acceptable — verify rails on table)")
+    else:
+        print(" (high — add more varied samples or check --square-mm)")
+
     out = resolve_path(cfg, "lens_calibration", root)
-    save_lens_calibration(out, camera_matrix, dist_coeffs, image_size)
+    save_lens_calibration(
+        out, camera_matrix, dist_coeffs, image_size, reprojection_error_px=reproj
+    )
     print(f"Saved lens calibration to {out}")
+    print("Next:")
+    print("  1. pool-fool-calibrate verify-lens --config", config_path, "--camera", repr(camera))
+    print("  2. If rails still bend at top: try cameras.undistort_alpha: 0.15 in config")
+    print("  3. Re-run table + play-region from Pi, then pool-fool-app")
     return 0

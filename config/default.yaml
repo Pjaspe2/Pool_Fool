@@ -1,9 +1,14 @@
 table:
-  # Playing surface (inside cushions), millimeters
-  width_mm: 1270.0   # 50" bar table example; 9ft = 2540 x 1270
+  # Playing surface (inside cushions). See docs/table-measurements.md
   length_mm: 2540.0
-  ball_diameter_mm: 57.15
+  width_mm: 1270.0
   ball_radius_mm: 28.575
+  show_pockets_debug: true
+  use_calibrated_pockets: true
+  pockets_from_play_region: true
+  pockets:
+    inset_fraction: 0.06
+    center_inset_mm: 57.0
 
 vision:
   # YOLO-only ball detection (pip install -e ".[yolo]")
@@ -51,6 +56,7 @@ paths:
   projector_homography: "config/calibration/projector_homography.npz"
   lens_calibration: "config/calibration/lens.npz"
   play_region: "config/calibration/play_region.npz"
+  pockets: "config/calibration/pockets.npz"
   camera_exposure: "config/calibration/camera_exposure.yaml"
 
 calibration:
@@ -58,7 +64,7 @@ calibration:
 
 cameras:
   overhead_index: 0
-  undistort: false
+  undistort: True
   width: 1280
   height: 720
   fps: 30
@@ -72,3 +78,6 @@ cameras:
 projector:
   display_width: 1920
   display_height: 1080
+  pattern_dot_radius_px: 200   # calibration targets on red felt
+  pattern_font_scale: 2.0
+  pattern_font_thickness: 4

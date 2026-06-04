@@ -35,7 +35,9 @@ pip install -e .
 pool-fool-edge --config config/default.yaml --mode combined
 ```
 
-`combined` = MJPEG on port **8080** + listen for overlay lines on UDP **8765**.
+`combined` = MJPEG on port **8080** + listen for overlay lines on UDP **8765** (needs `config/calibration/projector_homography.npz` on the Pi for HDMI; without it, newer builds still stream and print a warning).
+
+If you see `Projector calibration required` / missing `projector_homography.npz`, use **`--mode stream`** until the projector is calibrated, or run `pool-fool-calibrate projector` on the Pi with HDMI connected.
 
 ### Stream URL from your Mac
 
@@ -94,13 +96,84 @@ Ball detection is **YOLO-only** (no Hough/felt pipeline).
 
 ### 3. Calibrate **once** using the Pi stream (same view as production)
 
-Pi must be streaming (`pool-fool-edge --mode stream` or `combined`):
+Pi must be streaming (`pool-fool-edge --mode stream` or `combined`).
+
+**On the Pi** (while stream runs), use **localhost** — not `pool.local` (that name resolves on the Mac, not always on the Pi itself):
 
 ```bash
-pool-fool-calibrate capture --camera "http://pool.local:8080/stream.mjpg"
-pool-fool-calibrate table --image config/calibration/snapshot.jpg
-pool-fool-calibrate play-region --image config/calibration/snapshot.jpg
+pool-fool-calibrate table --config config/default.yaml \
+  --camera "http://127.0.0.1:8080/stream.mjpg"
+pool-fool-calibrate play-region --config config/default.yaml \
+  --camera "http://127.0.0.1:8080/stream.mjpg"
+pool-fool-calibrate pockets --config config/default.yaml \
+  --camera "http://127.0.0.1:8080/stream.mjpg"
 ```
+
+**On the Mac** (same stream URL with `pool.local`):
+
+```bash
+pool-fool-calibrate table --config config/yolo_preview.yaml \
+  --camera "http://pool.local:8080/stream.mjpg"
+```
+
+Easiest: copy `config/calibration/*.npz` from Mac to Pi with `scp` (see README), then only run `projector` cal on the Pi.
+
+### Projector cal with SSH only (Pi HDMI + Mac clicks)
+
+The projector must show the pattern from the **Pi** (`DISPLAY=:0` → HDMI-A-2). You click corners on the **Mac** using the Pi stream — no OpenCV windows on the Pi.
+
+**1. Match projector resolution** in `config/default.yaml` on the Pi and `config/yolo_preview.yaml` on the Mac (`projector.display_width` / `display_height`, usually 1920×1080).
+
+**2. Pi (SSH)** — stream can stay running in another terminal; pattern uses HDMI only:
+
+```bash
+cd ~/Pool_Fool && source .venv/bin/activate
+export DISPLAY=:0
+
+# Confirm X11: xrandr --query | head -3  →  HDMI-A-2 connected (not NOOP-1)
+
+sudo apt install -y feh   # once
+pool-fool-calibrate projector-pattern --config config/default.yaml --feh
+```
+
+Pattern is **white background, large black dots, white numbers** (readable on red felt). Tune in config: `projector.pattern_dot_radius_px`, `pattern_font_scale`.
+
+Use **`HDMI-A-2`** in `xrandr` (not `HDMI-2`). `fbi` often fails while X11 is running — use **`--feh`**.
+
+Leave the pattern running until the Mac click step finishes.
+
+**3. Mac** — click the same four dots in the camera window (live stream or snapshot):
+
+```bash
+cd ~/CursorCode/Pool_Fool && source .venv/bin/activate
+
+# live stream (close browser tab on :8080 first)
+pool-fool-calibrate projector --no-pattern \
+  --config config/yolo_preview.yaml \
+  --camera "http://pool.local:8080/stream.mjpg"
+
+# or snapshot first:
+pool-fool-calibrate capture --config config/yolo_preview.yaml \
+  --camera "http://pool.local:8080/stream.mjpg" \
+  --output config/calibration/snapshot.jpg
+pool-fool-calibrate projector --no-pattern \
+  --config config/yolo_preview.yaml \
+  --image config/calibration/snapshot.jpg
+```
+
+Click corners **1→2→3→4** matching the projector, then **s**. Uses `table_homography.npz` on the **Mac**.
+
+**4. Pi SSH** — press **Enter** to close the pattern.
+
+**5. Copy homography to the Pi:**
+
+```bash
+scp config/calibration/projector_homography.npz patrick@pool.local:~/Pool_Fool/config/calibration/
+```
+
+**6. Pi:** `pool-fool-edge --config config/default.yaml --mode combined`
+
+Mac app can use `--send-overlay` when overlay UDP is wired for pocket shots.
 
 ### 4. Run YOLO + ghost-ball
 

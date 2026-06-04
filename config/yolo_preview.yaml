@@ -1,18 +1,40 @@
 # Use with: pool-fool-app --config config/yolo_preview.yaml --camera "http://pool.local:8080/stream.mjpg"
 # 3-epoch preview weights — sanity check before 80-epoch training.
 
+# Playing surface (inside cushion noses). See docs/table-measurements.md
 table:
-  width_mm: 1270.0
-  length_mm: 2540.0
-  ball_diameter_mm: 57.15
+  length_mm: 2080.0   # long side — measure felt nose-to-nose
+  width_mm: 925.0    # short side
   ball_radius_mm: 28.575
+  show_pockets_debug: true
+  label_pockets: false
+  use_calibrated_pockets: true       # prefer pool-fool-calibrate pockets clicks
+  pockets_from_play_region: true     # fallback if no pockets.npz
+  pockets:
+    inset_fraction: 0.06   # nudge pockets toward center (0.04–0.10); only when using play region
+    center_inset_mm: 57.0  # used only if pockets_from_play_region: false
 
 vision:
   yolo_model: config/models/pool_combined_best.pt
   yolo_class_ids: all
-  yolo_confidence: 0.30
+  yolo_confidence: 0.35
   yolo_cue_class_ids: [1]
-  yolo_exclude_class_names: [break]
+  # Only ball classes from pool_combined (blocks stick/pocket even if mis-tagged)
+  yolo_allow_class_names:
+    - cue_ball
+    - object_ball
+    - one
+    - two
+    - three
+    - four
+    - five
+    - six
+    - seven
+    - eight
+    - nine
+  yolo_exclude_class_names: [break, pocket, bag, rack, table, flag, cue_stick, cue stick, stick]
+  yolo_min_bbox_aspect: 0.72      # reject elongated stick-like boxes
+  yolo_reject_wood_hue: true        # brown cue shaft on red felt
   yolo_imgsz: 640
   yolo_iou: 0.55
   yolo_max_det: 16
@@ -27,12 +49,21 @@ vision:
   stationary_velocity_ema_alpha: 0.2
   aim_angle_threshold_deg: 12.0
   use_cue_line: false
-  aim_mode: none
+  aim_mode: poc_pocket          # none | poc_pocket | session_pocket
+  poc_shot_require_stationary: true
+  poc_max_cut_angle_deg: 45     # hide impossible thin cuts (try 40–50)
   play_region_expand_scale: 1.0
-  yolo_exclude_class_names: [break, pocket, bag, rack, table, flag, cue_stick, cue stick, stick]
+
+# Semi-automated shot logging (no box labels): pick pocket, see line, m/x outcome
+session:
+  enabled: true
+  log_dir: logs
+  track_interval_s: 0.5       # ball positions while stationary (or moving if below)
+  track_when_moving: false
 
 overlay:
-  line_color_bgr: [0, 255, 200]
+  line_color_bgr: [0, 255, 200]       # cue → ghost → object
+  pocket_line_color_bgr: [0, 200, 255]  # object → pocket (yellow/cyan)
   ghost_ball_color_bgr: [0, 180, 255]
   line_thickness_px: 3
   ghost_ball_radius_px: 12
@@ -51,6 +82,7 @@ paths:
   projector_homography: "config/calibration/projector_homography.npz"
   lens_calibration: "config/calibration/lens.npz"
   play_region: "config/calibration/play_region.npz"
+  pockets: "config/calibration/pockets.npz"
   camera_exposure: "config/calibration/camera_exposure.yaml"
 
 calibration:
@@ -58,7 +90,8 @@ calibration:
 
 cameras:
   overhead_index: 0
-  undistort: false
+  undistort: true
+  undistort_alpha: 0.15   # try 0.1–0.25 if top/bottom rails still curve after lens recal
   width: 1280
   height: 720
   fps: 30
@@ -72,3 +105,6 @@ cameras:
 projector:
   display_width: 1920
   display_height: 1080
+  pattern_dot_radius_px: 56
+  pattern_font_scale: 2.0
+  pattern_font_thickness: 4

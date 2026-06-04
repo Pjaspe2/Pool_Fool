@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from pool_fool.desktop.physics.ghost_ball import GhostBallResult
+from pool_fool.desktop.physics.pocket_shot import PocketShotResult
 from pool_fool.shared.homography import load_homography, table_to_image
 from pool_fool.shared.schemas import ShotGuide
 from pool_fool.shared.table import TableSpec
@@ -117,14 +118,83 @@ def draw_debug_frame(
             2,
         )
 
-    # Table border
-    corners = [
-        (0.0, 0.0),
-        (table.length_mm, 0.0),
-        (table.length_mm, table.width_mm),
-        (0.0, table.width_mm),
-    ]
-    poly = np.array([table_to_image(H_cam_inv, np.array(c)) for c in corners], dtype=np.int32)
-    cv2.polylines(vis, [poly], True, (80, 80, 80), 1)
+    return vis
+
+
+def draw_selected_pocket_marker(
+    frame: np.ndarray,
+    H_cam_inv: np.ndarray,
+    pocket_center_mm: tuple[float, float],
+    *,
+    pocket_id: str = "",
+    color_bgr: tuple[int, int, int] = (255, 180, 0),
+) -> None:
+    """Highlight the user-selected pocket on the debug frame (in-place)."""
+    px = table_to_image(H_cam_inv, np.array(pocket_center_mm, dtype=np.float64))
+    cv2.circle(frame, px, 22, color_bgr, 3, cv2.LINE_AA)
+    if pocket_id:
+        cv2.putText(
+            frame,
+            pocket_id,
+            (px[0] + 24, px[1] + 6),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            color_bgr,
+            1,
+            cv2.LINE_AA,
+        )
+
+
+def draw_pocket_shot_frame(
+    frame: np.ndarray,
+    H_cam_inv: np.ndarray,
+    result: PocketShotResult,
+    overlay_cfg: dict,
+    *,
+    session_label: str | None = None,
+) -> np.ndarray:
+    """Cue → ghost → object (cyan) and object → pocket (yellow)."""
+    vis = frame.copy()
+    line_color = tuple(overlay_cfg.get("line_color_bgr", [0, 255, 200]))
+    pocket_color = tuple(overlay_cfg.get("pocket_line_color_bgr", [0, 200, 255]))
+    ghost_color = tuple(overlay_cfg.get("ghost_ball_color_bgr", [0, 180, 255]))
+    thickness = int(overlay_cfg.get("line_thickness_px", 3))
+    gr = int(overlay_cfg.get("ghost_ball_radius_px", 12))
+
+    if result.valid:
+        pts = result.polyline()
+        px_pts = [table_to_image(H_cam_inv, p) for p in pts]
+        # Aim: cue → ghost → contact (midpoint) → object center, then object → pocket
+        contact_mm = 0.5 * (result.ghost + result.object_ball)
+        px_contact = table_to_image(H_cam_inv, contact_mm)
+        cv2.line(vis, px_pts[0], px_pts[1], line_color, thickness, cv2.LINE_AA)
+        cv2.line(vis, px_pts[1], px_contact, line_color, thickness, cv2.LINE_AA)
+        cv2.line(vis, px_contact, px_pts[2], line_color, max(1, thickness - 1), cv2.LINE_AA)
+        cv2.line(vis, px_pts[2], px_pts[3], pocket_color, thickness, cv2.LINE_AA)
+        cv2.circle(vis, px_pts[1], gr, ghost_color, 2, cv2.LINE_AA)
+        cv2.circle(vis, px_contact, 5, line_color, -1, cv2.LINE_AA)
+        cv2.circle(vis, px_pts[2], gr // 2, line_color, 2, cv2.LINE_AA)
+        cv2.circle(vis, px_pts[3], max(6, gr // 2), pocket_color, 2, cv2.LINE_AA)
+        label = session_label or f"PoC → {result.pocket_id}  cut {result.cut_angle_deg:.0f}°"
+        cv2.putText(
+            vis,
+            label,
+            (20, 100),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            pocket_color,
+            2,
+            cv2.LINE_AA,
+        )
+    elif result.message:
+        cv2.putText(
+            vis,
+            result.message,
+            (20, 100),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 255),
+            2,
+        )
 
     return vis

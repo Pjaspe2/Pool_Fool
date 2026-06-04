@@ -7,17 +7,30 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from pool_fool.desktop.compose.overlay import OverlayRenderer, draw_debug_frame
+from pool_fool.desktop.compose.overlay import (
+    OverlayRenderer,
+    draw_debug_frame,
+    draw_pocket_shot_frame,
+    draw_selected_pocket_marker,
+)
 from pool_fool.desktop.latency import FrameTimer, LatencyStats
 from pool_fool.desktop.network.overlay_udp import OverlaySender
 from pool_fool.desktop.network.stream_client import MjpegStreamClient
 from pool_fool.desktop.physics.ghost_ball import solve_shot
+from pool_fool.desktop.physics.pocket_shot import (
+    PocketShotResult,
+    solve_poc_pocket_shot,
+    solve_target_pocket_shot,
+)
+from pool_fool.desktop.session import SessionLogger
 from pool_fool.desktop.vision.detector_factory import create_ball_detector, detector_mode_label
 from pool_fool.desktop.vision.cue import CueDetector
 from pool_fool.desktop.vision.fusion import fuse_cue_direction
 from pool_fool.desktop.vision.tracking import BallTracker, StationaryGate
 from pool_fool.shared.camera import CameraOpenError, capture_frame, open_camera
 from pool_fool.shared.config import load_config, resolve_path, table_spec_from_config
+from pool_fool.shared.table_draw import draw_table_layout
+from pool_fool.shared.table_layout import TableLayout
 from pool_fool.shared.frame_pipeline import build_lens_corrector, preprocess_frame
 from pool_fool.shared.homography import load_homography
 from pool_fool.shared.play_region import PlayRegion
@@ -26,6 +39,22 @@ from pool_fool.shared.schemas import OverlayMessage
 
 def _is_stream_url(source: str | int) -> bool:
     return isinstance(source, str) and source.startswith(("http://", "https://", "rtsp://"))
+
+
+POCKET_KEY_TO_INDEX = {ord(str(d)): d - 1 for d in range(1, 7)}
+
+
+def _session_cfg(cfg: dict, root: Path) -> dict:
+    raw = cfg.get("session")
+    if not isinstance(raw, dict):
+        return {"enabled": False}
+    out = dict(raw)
+    log_dir = out.get("log_dir", "logs")
+    out["log_dir"] = (root / log_dir).resolve() if not Path(str(log_dir)).is_absolute() else Path(log_dir)
+    out.setdefault("enabled", False)
+    out.setdefault("track_interval_s", 0.5)
+    out.setdefault("track_when_moving", False)
+    return out
 
 
 def _side_camera_index(cam_cfg: dict) -> int | None:
@@ -58,6 +87,8 @@ def run_loop(
     cfg = load_config(config_path)
     root = config_path.parent.parent
     table = table_spec_from_config(cfg)
+    table_cfg = cfg.get("table", {})
+    show_pockets = bool(table_cfg.get("show_pockets_debug", True))
     vision = cfg["vision"]
 
     H_path = resolve_path(cfg, "table_homography", root)
@@ -73,6 +104,17 @@ def run_loop(
     if play_region is not None and expand_scale > 1.0:
         play_region = play_region.expanded(expand_scale, table)
         print(f"Play region expanded {expand_scale:.0%} from saved calibration")
+
+    from pool_fool.shared.config import resolve_path as resolve_cfg_path
+    from pool_fool.shared.pocket_calibration import load_calibrated_pockets
+
+    layout = TableLayout.resolve(cfg, root, play_region)
+    if load_calibrated_pockets(resolve_cfg_path(cfg, "pockets", root)):
+        print("Pocket model: calibrated clicks (pool-fool-calibrate pockets).")
+    elif play_region is not None and bool(table_cfg.get("pockets_from_play_region", True)):
+        print("Pocket model: estimated from play-region quad.")
+    else:
+        print("Pocket model: config table rectangle.")
     if play_region is None:
         print("No play region mask — pockets/rails may cause false detections.")
         print("  Run: pool-fool-calibrate play-region --config", config_path)
@@ -91,8 +133,18 @@ def run_loop(
         return 1
     detector_label = detector_mode_label(vision)
     print(f"Ball detector: {detector_label}")
-    print("  Magenta/green boxes = YOLO. Orange quad = play-region mask (saved cal).")
-    use_cue_line = bool(vision.get("use_cue_line", False))
+    print("  Magenta/green boxes = YOLO. Orange quad = play-region. Cyan = pocket model.")
+    session_cfg = _session_cfg(cfg, root)
+    session_enabled = bool(session_cfg.get("enabled", False))
+    aim_mode = str(vision.get("aim_mode", "none")).lower()
+    poc_pocket = aim_mode in ("poc_pocket", "poc", "easiest_pocket", "session_pocket")
+    poc_require_stationary = bool(vision.get("poc_shot_require_stationary", True))
+    use_cue_line = bool(vision.get("use_cue_line", False)) and not poc_pocket
+    if session_enabled:
+        poc_pocket = True
+        print("  Aim: session mode — pick pocket (1–6), trajectory for nearest object.")
+    elif poc_pocket:
+        print("  Aim: PoC pocket shot (nearest object → easiest pocket) when balls still.")
     cue_detector: CueDetector | None = CueDetector(vision, H, play_region) if use_cue_line else None
     side_index = _side_camera_index(cfg.get("cameras", {}))
     side_cap: cv2.VideoCapture | None = None
@@ -162,12 +214,32 @@ def run_loop(
             "If the stream fails: restart pool-fool-edge on the Pi (git pull for threaded server),\n"
             "  or close the browser tab — old Pi server allowed only one viewer."
         )
-    print("Keys: q=quit  r=lock cue ball  (orange outline = play-area mask)")
+    session_logger: SessionLogger | None = None
+    selected_pocket_idx = 0
+    session_flash = ""
+    session_flash_until = 0.0
+    if session_enabled:
+        log_root = Path(session_cfg["log_dir"])
+        session_logger = SessionLogger(
+            log_root,
+            meta={
+                "config": str(config_path.resolve()),
+                "table_length_mm": table.length_mm,
+                "table_width_mm": table.width_mm,
+            },
+        )
+        print(f"Session log: {session_logger.paths.session_dir}")
+        for i, p in enumerate(layout.pockets):
+            print(f"  {i + 1} = {p.id}")
+        print("Keys: 1–6 pocket  [ ] prev/next  m=made  x=miss  q=quit  r=lock cue")
+    else:
+        print("Keys: q=quit  r=lock cue ball  (orange outline = play-area mask)")
 
     cv2.namedWindow("pool_fool_debug", cv2.WINDOW_NORMAL)
     waiting_logged = False
 
     last_result = None
+    last_poc_shot: PocketShotResult | None = None
     fps_t0 = time.monotonic()
     frames = 0
     frame_timer = FrameTimer()
@@ -212,6 +284,48 @@ def run_loop(
 
         cue_ball, objects = ball_detector.split_cue_and_objects(balls)
         result = None
+        poc_shot: PocketShotResult | None = None
+        can_aim = stationary or not poc_require_stationary
+        max_cut = float(vision.get("poc_max_cut_angle_deg", 48.0))
+        if poc_pocket and cue_ball is not None and objects and can_aim:
+            obj_centers = [o.center_mm for o in objects]
+            if session_enabled:
+                target = layout.pocket_at_index(selected_pocket_idx)
+                poc_shot = solve_target_pocket_shot(
+                    cue_ball.center_mm,
+                    obj_centers,
+                    layout,
+                    table,
+                    target,
+                    max_cut_angle_deg=max_cut,
+                )
+            else:
+                poc_shot = solve_poc_pocket_shot(
+                    cue_ball.center_mm,
+                    obj_centers,
+                    layout,
+                    table,
+                    max_cut_angle_deg=max_cut,
+                )
+            if poc_shot.valid:
+                last_poc_shot = poc_shot
+        elif (
+            poc_pocket
+            and not can_aim
+            and last_poc_shot is not None
+            and last_poc_shot.valid
+        ):
+            # Freeze last good line only while balls are moving (not stale on stationary)
+            poc_shot = last_poc_shot
+
+        if session_logger is not None:
+            session_logger.maybe_log_tracks(
+                balls,
+                stationary=stationary,
+                interval_s=float(session_cfg.get("track_interval_s", 0.5)),
+                when_moving=bool(session_cfg.get("track_when_moving", False)),
+            )
+
         if cue_ball is not None and cue_detector is not None:
             cue_line = cue_detector.detect(frame, cue_ball.center_mm)
             if side_cap is not None and side_cue_detector is not None:
@@ -235,7 +349,32 @@ def run_loop(
         if result is None and last_result is not None and use_cue_line:
             result = last_result
 
-        vis = draw_debug_frame(frame, H_inv, result, cfg["overlay"], table) if result is not None else frame.copy()
+        if poc_shot is not None:
+            session_label = None
+            if session_enabled:
+                pid = layout.pocket_at_index(selected_pocket_idx).id
+                cut = f"{poc_shot.cut_angle_deg:.0f}°" if poc_shot.valid else "—"
+                session_label = f"→ {pid}  cut {cut}  |  m made  x miss"
+            vis = draw_pocket_shot_frame(
+                frame, H_inv, poc_shot, cfg["overlay"], session_label=session_label
+            )
+            if session_enabled:
+                sel = layout.pocket_at_index(selected_pocket_idx)
+                draw_selected_pocket_marker(vis, H_inv, sel.center_mm, pocket_id=sel.id)
+        elif result is not None:
+            vis = draw_debug_frame(frame, H_inv, result, cfg["overlay"], table)
+        else:
+            vis = frame.copy()
+        if show_pockets:
+            # Orange play-region already draws the quad; skip duplicate gray border.
+            draw_border = layout.border_corners_mm is None
+            draw_table_layout(
+                vis,
+                H_inv,
+                layout,
+                label_pockets=bool(table_cfg.get("label_pockets", False)),
+                draw_border=draw_border,
+            )
         if play_region is not None:
             play_region.draw(vis, H_inv)
 
@@ -288,6 +427,30 @@ def run_loop(
             (180, 180, 180),
             1,
         )
+        if session_logger is not None:
+            sel_id = layout.pocket_at_index(selected_pocket_idx).id
+            cv2.putText(
+                vis,
+                f"LOG {session_logger.paths.session_dir.name}  "
+                f"events {session_logger.event_count}  pocket [{selected_pocket_idx + 1}] {sel_id}",
+                (20, 128),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.48,
+                (255, 200, 120),
+                1,
+                cv2.LINE_AA,
+            )
+            if time.monotonic() < session_flash_until and session_flash:
+                cv2.putText(
+                    vis,
+                    session_flash,
+                    (20, 156),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65,
+                    (0, 255, 120),
+                    2,
+                    cv2.LINE_AA,
+                )
 
         frames += 1
         if time.monotonic() - fps_t0 >= 1.0:
@@ -336,7 +499,48 @@ def run_loop(
                 print("No ball detected — put cue ball in view, then press r.")
         if key == ord("c"):
             print("Run pool-fool-calibrate table separately, then restart app.")
+        if session_enabled and key in POCKET_KEY_TO_INDEX:
+            idx = POCKET_KEY_TO_INDEX[key]
+            if idx < len(layout.pockets):
+                selected_pocket_idx = idx
+                sel = layout.pocket_at_index(selected_pocket_idx)
+                print(f"Target pocket: [{idx + 1}] {sel.id}")
+                last_poc_shot = None
+        if session_enabled and key == ord("["):
+            selected_pocket_idx = (selected_pocket_idx - 1) % len(layout.pockets)
+            print(f"Target pocket: [{selected_pocket_idx + 1}] {layout.pocket_at_index(selected_pocket_idx).id}")
+            last_poc_shot = None
+        if session_enabled and key == ord("]"):
+            selected_pocket_idx = (selected_pocket_idx + 1) % len(layout.pockets)
+            print(f"Target pocket: [{selected_pocket_idx + 1}] {layout.pocket_at_index(selected_pocket_idx).id}")
+            last_poc_shot = None
+        if session_enabled and session_logger and key in (ord("m"), ord("x")):
+            outcome = "made" if key == ord("m") else "missed"
+            shot = poc_shot if poc_shot is not None else last_poc_shot
+            target_id = layout.pocket_at_index(selected_pocket_idx).id
+            if shot is None or cue_ball is None:
+                print("Nothing to log — need cue + object balls in view.")
+            else:
+                session_logger.log_shot_outcome(
+                    outcome,
+                    target_pocket_id=target_id,
+                    shot=shot,
+                    balls=balls,
+                )
+                session_flash = f"Logged {outcome.upper()} → {target_id}"
+                session_flash_until = time.monotonic() + 2.5
+                print(
+                    f"{session_flash}  "
+                    f"(event #{session_logger.event_count}, "
+                    f"valid={shot.valid}, cut={shot.cut_angle_deg:.0f}°)"
+                )
 
+    if session_logger is not None:
+        session_logger.close()
+        print(
+            f"Session saved: {session_logger.paths.session_dir} "
+            f"({session_logger.event_count} events, {session_logger.track_count} track rows)"
+        )
     if cap is not None:
         cap.release()
     if side_cap is not None:

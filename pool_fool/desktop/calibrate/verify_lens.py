@@ -13,7 +13,7 @@ from pool_fool.shared.live_camera import LiveCamera
 
 def verify_lens(
     config_path: Path,
-    camera: int,
+    camera: str | int,
     *,
     image_path: Path | None = None,
     output: Path | None = None,
@@ -25,12 +25,20 @@ def verify_lens(
         print(f"Missing {lens_path}")
         return 1
 
-    K, dist, sz = load_lens_calibration(lens_path)
+    loaded = load_lens_calibration(lens_path)
+    if loaded is None:
+        return 1
+    K, dist, sz, reproj = loaded
     fx, fy = float(K[0, 0]), float(K[1, 1])
+    alpha = float(cfg.get("cameras", {}).get("undistort_alpha", 0.0))
     print(f"Lens file: {lens_path}")
     print(f"  Resolution: {int(sz[0])}x{int(sz[1])}")
     print(f"  Focal length (px): fx={fx:.1f} fy={fy:.1f}")
     print(f"  Distortion: {np.array2string(dist.ravel(), precision=4, suppress_small=True)}")
+    if reproj is not None:
+        quality = "good" if reproj < 0.5 else ("ok" if reproj < 1.0 else "poor — recalibrate")
+        print(f"  Reprojection error: {reproj:.3f} px ({quality})")
+    print(f"  undistort_alpha: {alpha} (try 0.0–0.3 if edges still bent)")
 
     if image_path and image_path.exists():
         frame = cv2.imread(str(image_path))
@@ -54,7 +62,11 @@ def verify_lens(
         frame = cv2.resize(frame, (int(sz[0]), int(sz[1])))
 
     corrector = build_lens_corrector(cfg, root)
-    fixed = preprocess_frame(frame, corrector) if corrector else undistort_frame(frame, K, dist)
+    fixed = (
+        preprocess_frame(frame, corrector)
+        if corrector
+        else undistort_frame(frame, K, dist, alpha=alpha)
+    )
 
     out = output or (root / "config/calibration/lens_verify.jpg")
     out.parent.mkdir(parents=True, exist_ok=True)

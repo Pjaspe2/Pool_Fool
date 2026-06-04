@@ -201,28 +201,27 @@ def capture_frame(
 
 
 def capture_stream_frame(url: str, *, attempts: int = 60) -> Any:
-    """Read one JPEG frame from an MJPEG/RTSP URL."""
-    cap = cv2.VideoCapture(url)
-    if not cap.isOpened():
+    """Read one JPEG frame from an MJPEG URL (Pi edge multipart stream)."""
+    del attempts  # LatestMjpegStream uses its own timeout
+    from pool_fool.shared.mjpeg_stream import read_one_mjpeg_frame
+
+    try:
+        return read_one_mjpeg_frame(url, timeout_s=20.0)
+    except TimeoutError as e:
         raise CameraOpenError(
-            f"Cannot open stream: {url}",
+            str(e),
             index=-1,
             hints=[
-                "Close browser tabs on /stream.mjpg (Pi serves one client on older builds).",
+                "Close browser tabs on /stream.mjpg.",
                 "Check pool-fool-edge is running on the Pi.",
             ],
-        )
-    try:
-        ret, frame = read_frame_with_warmup(cap, attempts=attempts, delay_s=0.1)
-        if not ret or frame is None:
-            raise CameraOpenError(
-                f"Stream opened but no frame: {url}",
-                index=-1,
-                hints=["Retry in a few seconds; ensure the Pi camera is connected."],
-            )
-        return frame
-    finally:
-        cap.release()
+        ) from e
+    except RuntimeError as e:
+        raise CameraOpenError(
+            str(e),
+            index=-1,
+            hints=["Retry in a few seconds; ensure the Pi camera is connected."],
+        ) from e
 
 
 def probe_modes(index: int) -> list[dict[str, Any]]:

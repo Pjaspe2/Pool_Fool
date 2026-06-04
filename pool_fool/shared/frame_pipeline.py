@@ -14,7 +14,8 @@ def build_lens_corrector(cfg: dict, root: Path) -> LensCorrector | None:
     path = resolve_path(cfg, "lens_calibration", root)
     if not path.exists():
         return None
-    return LensCorrector(path)
+    alpha = float(cfg.get("cameras", {}).get("undistort_alpha", 0.0))
+    return LensCorrector(path, alpha=alpha)
 
 
 def preprocess_frame(frame: np.ndarray, corrector: LensCorrector | None) -> np.ndarray:

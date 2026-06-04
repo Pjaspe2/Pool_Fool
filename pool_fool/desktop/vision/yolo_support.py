@@ -72,6 +72,68 @@ def cluster_detections(balls: list[DetectedBall], merge_mm: float) -> list[Detec
     return merged
 
 
+def _resolve_allow_class_ids(vision_cfg: dict, model) -> set[int] | None:
+    """
+    If yolo_allow_class_names is set, only those YOLO classes become detections.
+    Stops pockets/stick/wood from being forced into ball classes when using yolo_class_ids: all.
+    """
+    allow = vision_cfg.get("yolo_allow_class_names")
+    if not allow:
+        return None
+    names = getattr(model, "names", {}) or {}
+    if isinstance(names, dict):
+        name_map = {int(k): str(v).lower() for k, v in names.items()}
+    else:
+        name_map = {i: str(n).lower() for i, n in enumerate(names)}
+    ids: set[int] = set()
+    for sub in allow:
+        sub = str(sub).lower()
+        for cid, cname in name_map.items():
+            if sub in cname or cname.replace("_", " ") == sub.replace("_", " "):
+                ids.add(cid)
+    return ids if ids else None
+
+
+def filter_stick_like_boxes(
+    balls: list[DetectedBall],
+    frame: np.ndarray,
+    vision_cfg: dict,
+) -> list[DetectedBall]:
+    """Drop elongated boxes and brown wood (cue shaft) mistaken for balls."""
+    min_aspect = float(vision_cfg.get("yolo_min_bbox_aspect", 0.72))
+    reject_wood = bool(vision_cfg.get("yolo_reject_wood_hue", True))
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV) if reject_wood else None
+    out: list[DetectedBall] = []
+    for b in balls:
+        if b.bbox_px is None:
+            out.append(b)
+            continue
+        x1, y1, x2, y2 = b.bbox_px
+        w, h = x2 - x1, y2 - y1
+        if w < 4 or h < 4:
+            continue
+        aspect = min(w, h) / max(w, h)
+        if aspect < min_aspect:
+            continue
+        if reject_wood and hsv is not None and not b.is_cue:
+            xi = int((x1 + x2) / 2)
+            yi = int((y1 + y2) / 2)
+            pad = 6
+            roi = hsv[
+                max(0, yi - pad) : min(hsv.shape[0], yi + pad),
+                max(0, xi - pad) : min(hsv.shape[1], xi + pad),
+            ]
+            if roi.size:
+                h_med = float(np.median(roi[:, :, 0]))
+                s_med = float(np.median(roi[:, :, 1]))
+                v_med = float(np.median(roi[:, :, 2]))
+                # Dark brown cue on red felt (not white/yellow balls)
+                if v_med < 120 and 8 < h_med < 35 and s_med > 40:
+                    continue
+        out.append(b)
+    return out
+
+
 def filter_ball_sizes(
     balls: list[DetectedBall],
     *,
@@ -79,7 +141,7 @@ def filter_ball_sizes(
     table: TableSpec,
     min_scale: float = 0.45,
     max_scale: float = 2.2,
-    min_aspect: float = 0.65,
+    min_aspect: float = 0.72,
 ) -> list[DetectedBall]:
     """Drop detections far from expected pool-ball diameter in image space."""
     out: list[DetectedBall] = []

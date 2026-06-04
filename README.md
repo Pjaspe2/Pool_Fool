@@ -51,6 +51,8 @@ pool-fool-calibrate play-region --config config/default.yaml --camera 0
 
 Click **inside the rails** (TL → TR → BR → BL), excluding pockets. Orange outline in the app shows the mask.
 
+Table size and pocket positions: [docs/table-measurements.md](docs/table-measurements.md).
+
 ### 1. Calibrate overhead camera → table plane
 
 ```bash

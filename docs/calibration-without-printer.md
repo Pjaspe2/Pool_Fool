@@ -8,23 +8,82 @@ That fixes **perspective** (overhead trapezoid → table mm). It does **not** fu
 
 ---
 
-## Option A — ChArUco on phone/tablet (best without printer)
+## Option A — ChArUco on laptop screen (best without printer)
 
-1. Measure one **square** on screen with a ruler after opening the pattern.
-2. Run:
+**Pi overhead + bent rails:** see [lens-calibration-pi.md](lens-calibration-pi.md) (15+ samples, reprojection error, `undistort_alpha`).
+
+Works with the **Pi overhead stream** (pattern on the MacBook screen under the camera) or a local webcam (`--camera 0`).
+
+### 1. Measure the pattern
 
 ```bash
-pool-fool-calibrate lens-aruco --square-mm 40 --camera 0
+open config/calibration/aruco_charuco.png
 ```
 
-3. Open `config/calibration/aruco_charuco.png` **fullscreen in Preview** on the laptop (not the capture window).
-4. One window: **left** = camera, **right** = squared pattern (after **w**).
-5. Press **w**, click 4 corners on the **left** view only (TL→TR→BR→BL).
-6. When you see **>>> Press SPACE or s to capture <<<**, press **SPACE** (not **c**). Terminal should print `captured sample 1`.
-7. Move phone/camera to new angles; capture **5+** samples; then **c** to finish.
+In **Preview**, View → Enter Full Screen. Measure **one black/white square** edge-to-edge with a ruler (mm). Example: 38 mm → use `--square-mm 38`.
 
-**c** = finish only. **SPACE** / **s** = save a sample. If you press **c** with 0 samples, it will tell you to use SPACE first.
-5. Re-run **table** calibration, then `pool-fool-app`.
+### 2. Physical setup (Pi)
+
+- Pi running: `pool-fool-edge --mode stream`
+- **Close** any browser tab on `http://pool.local:8080/stream.mjpg`
+- Place the **laptop on the table** under the Pi camera (screen up, pattern fullscreen)
+- Room lights on; avoid glare on the screen (tilt screen slightly if needed)
+
+### 3. Run lens calibration
+
+```bash
+pool-fool-calibrate lens-aruco \
+  --config config/yolo_preview.yaml \
+  --square-mm 38 \
+  --camera "http://pool.local:8080/stream.mjpg" \
+  --no-fullscreen
+```
+
+`--no-fullscreen` keeps the pattern in Preview only (do not use the tool’s built-in fullscreen pattern).
+
+### 4. In the capture window
+
+| Key | Action |
+|-----|--------|
+| **w** | Click 4 corners of the **laptop screen** on the **LEFT** (Pi) panel: TL → TR → BR → BL |
+| **SPACE** / **s** | Save a sample when corners turn **green** and you see `>>> Press SPACE or s to capture <<<` |
+| **c** | Finish after **5+** samples (different positions/tilts of the laptop) |
+| **q** | Quit without saving |
+
+**c** = finish only. **SPACE** = capture. Move the laptop to new positions under the camera between captures.
+
+### 5. Enable undistort and re-calibrate table
+
+In `config/yolo_preview.yaml` (or `default.yaml`):
+
+```yaml
+cameras:
+  undistort: true
+```
+
+```bash
+pool-fool-calibrate verify-lens \
+  --config config/yolo_preview.yaml \
+  --camera "http://pool.local:8080/stream.mjpg"
+
+pool-fool-calibrate table \
+  --config config/yolo_preview.yaml \
+  --camera "http://pool.local:8080/stream.mjpg"
+
+pool-fool-calibrate play-region \
+  --config config/yolo_preview.yaml \
+  --camera "http://pool.local:8080/stream.mjpg"
+```
+
+Then run `pool-fool-app` with the same config and stream URL.
+
+### Local webcam (no Pi)
+
+```bash
+pool-fool-calibrate lens-aruco --config config/default.yaml --square-mm 40 --camera 0 --no-fullscreen
+```
+
+Same keys; LEFT panel is the Mac webcam.
 
 ---
 

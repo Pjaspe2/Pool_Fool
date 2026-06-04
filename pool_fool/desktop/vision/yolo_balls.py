@@ -6,9 +6,10 @@ import numpy as np
 
 from pool_fool.desktop.vision.balls import DetectedBall
 from pool_fool.desktop.vision.yolo_support import (
+    _resolve_allow_class_ids,
     cluster_detections,
-    expected_ball_radius_px,
     filter_ball_sizes,
+    filter_stick_like_boxes,
     preprocess_for_yolo,
 )
 from pool_fool.shared.homography import image_to_table
@@ -73,6 +74,7 @@ class YoloBallDetector:
         self._model = YOLO(model_name)
         self._classes = _parse_yolo_classes(vision_cfg)
         self._exclude_class_ids = _resolve_exclude_class_ids(vision_cfg, self._model)
+        self._allow_class_ids = _resolve_allow_class_ids(vision_cfg, self._model)
         self._cue_class_ids = set(int(x) for x in vision_cfg.get("yolo_cue_class_ids", []))
         self._conf = float(vision_cfg.get("yolo_confidence", 0.25))
         self._imgsz = int(vision_cfg.get("yolo_imgsz", 640))
@@ -109,6 +111,8 @@ class YoloBallDetector:
                 cls_id = int(box.cls[0]) if box.cls is not None else -1
                 if cls_id in self._exclude_class_ids:
                     continue
+                if self._allow_class_ids is not None and cls_id not in self._allow_class_ids:
+                    continue
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 cx = (x1 + x2) / 2.0
                 cy = (y1 + y2) / 2.0
@@ -134,7 +138,13 @@ class YoloBallDetector:
                     )
                 )
 
-        balls = filter_ball_sizes(balls, H_inv=self.H_inv, table=self.table)
+        balls = filter_stick_like_boxes(balls, frame, self.cfg)
+        balls = filter_ball_sizes(
+            balls,
+            H_inv=self.H_inv,
+            table=self.table,
+            min_aspect=float(self.cfg.get("yolo_min_bbox_aspect", 0.72)),
+        )
         balls = cluster_detections(balls, self._merge_mm)
         self._assign_cue(balls)
         self._cached = copy.deepcopy(balls)

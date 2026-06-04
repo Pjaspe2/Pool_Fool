@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import cv2
@@ -10,6 +14,7 @@ from pool_fool.desktop.calibrate.aruco_lens import calibrate_lens_aruco, save_ar
 from pool_fool.desktop.calibrate.lens_cal import calibrate_lens
 from pool_fool.desktop.calibrate.lens_estimate import estimate_lens_from_table
 from pool_fool.desktop.calibrate.play_region_cal import calibrate_play_region
+from pool_fool.desktop.calibrate.pocket_cal import calibrate_pockets
 from pool_fool.desktop.calibrate.verify_lens import verify_lens
 from pool_fool.desktop.vision.felt import build_felt_mask
 from pool_fool.shared.calibration_regions import parse_dst_corners_mm, table_corners_for_region
@@ -279,7 +284,99 @@ def calibrate_table(
     return 0
 
 
-def calibrate_projector(config_path: Path, camera: str | int) -> int:
+def _projector_pattern_canvas(cfg: dict) -> tuple[np.ndarray, list[tuple[int, int]]]:
+    """White field, black corner targets, white digits — readable on red felt."""
+    pw = int(cfg["projector"]["display_width"])
+    ph = int(cfg["projector"]["display_height"])
+    proj_corners_px = [(0, 0), (pw - 1, 0), (pw - 1, ph - 1), (0, ph - 1)]
+    canvas = np.full((ph, pw, 3), 255, dtype=np.uint8)
+    dot_r = int(cfg.get("projector", {}).get("pattern_dot_radius_px", 56))
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = float(cfg.get("projector", {}).get("pattern_font_scale", 2.0))
+    thickness = int(cfg.get("projector", {}).get("pattern_font_thickness", 4))
+
+    for i, (px, py) in enumerate(proj_corners_px):
+        cv2.circle(canvas, (px, py), dot_r, (0, 0, 0), -1, lineType=cv2.LINE_AA)
+        label = str(i + 1)
+        (tw, th), baseline = cv2.getTextSize(label, font, scale, thickness)
+        tx = int(px - tw / 2)
+        ty = int(py + th / 2)
+        cv2.putText(
+            canvas,
+            label,
+            (tx, ty),
+            font,
+            scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+    return canvas, proj_corners_px
+
+
+def show_projector_pattern(config_path: Path, *, use_feh: bool = False) -> int:
+    """
+    Fullscreen numbered corners on HDMI (run on the Pi over SSH).
+
+    Press Enter in the terminal to close — works without a mouse on the Pi desktop.
+    """
+    if not os.environ.get("DISPLAY"):
+        print("Set DISPLAY=:0 so output goes to HDMI (e.g. export DISPLAY=:0)")
+
+    cfg = load_config(config_path)
+    canvas, _ = _projector_pattern_canvas(cfg)
+    tmp = Path(tempfile.gettempdir()) / "pool_fool_projector_pattern.png"
+    cv2.imwrite(str(tmp), canvas)
+
+    feh = shutil.which("feh")
+    if use_feh:
+        # feh uses X11 — reliable on Pi when OpenCV/Qt hides on HDMI (fbi/DRM fails)
+        if not feh:
+            print("feh not installed. On the Pi: sudo apt install -y feh")
+            return 1
+        print("Showing pattern with feh (X11 fullscreen on HDMI-A-2)...")
+        proc = subprocess.Popen(
+            [feh, "--fullscreen", "--auto-zoom", str(tmp)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        print("Projector pattern is on HDMI (4 numbered corner dots).")
+        print("On your Mac: pool-fool-calibrate projector --no-pattern --camera <stream>")
+        print("Press ENTER here when finished clicking corners on the Mac...")
+        try:
+            input()
+        except KeyboardInterrupt:
+            print("\nCancelled")
+        proc.terminate()
+        proc.wait(timeout=5)
+        tmp.unlink(missing_ok=True)
+        return 0
+
+    window = "projector_pattern"
+    cv2.namedWindow(window, cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    cv2.imshow(window, canvas)
+    cv2.waitKey(1)
+    print("Projector pattern is on HDMI (4 numbered corner dots).")
+    print("On your Mac: pool-fool-calibrate projector --no-pattern --camera <stream>")
+    print("If the projector stays black, retry with: pool-fool-calibrate projector-pattern --feh")
+    print("Press ENTER here when finished clicking corners on the Mac...")
+    try:
+        input()
+    except KeyboardInterrupt:
+        print("\nCancelled")
+    cv2.destroyAllWindows()
+    tmp.unlink(missing_ok=True)
+    return 0
+
+
+def calibrate_projector(
+    config_path: Path,
+    camera: str | int,
+    *,
+    show_pattern: bool = True,
+    image_path: Path | None = None,
+) -> int:
     cfg = load_config(config_path)
     root = config_path.resolve().parent.parent
     table_path = resolve_path(cfg, "table_homography", root)
@@ -288,20 +385,23 @@ def calibrate_projector(config_path: Path, camera: str | int) -> int:
         return 1
     H_cam = load_homography(table_path)
 
-    pw = cfg["projector"]["display_width"]
-    ph = cfg["projector"]["display_height"]
+    _, proj_corners_px = _projector_pattern_canvas(cfg)
 
-    proj_corners_px = [(0, 0), (pw - 1, 0), (pw - 1, ph - 1), (0, ph - 1)]
-    canvas = np.zeros((ph, pw, 3), dtype=np.uint8)
-    for i, (px, py) in enumerate(proj_corners_px):
-        cv2.circle(canvas, (px, py), 30, (0, 255, 255), -1)
-        cv2.putText(canvas, str(i + 1), (px + 40, py + 10), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
-    cv2.namedWindow("projector_pattern", cv2.WND_PROP_FULLSCREEN)
-    cv2.setWindowProperty("projector_pattern", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-    cv2.imshow("projector_pattern", canvas)
+    if show_pattern:
+        canvas, _ = _projector_pattern_canvas(cfg)
+        window = "projector_pattern"
+        cv2.namedWindow(window, cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.imshow(window, canvas)
+        cv2.waitKey(1)
+    else:
+        print(
+            "Using pattern already on the projector (pool-fool-calibrate projector-pattern on the Pi)."
+        )
 
-    frame = _load_frame(camera, cfg, None)
-    cv2.destroyWindow("projector_pattern")
+    frame = _load_frame(camera, cfg, image_path, root=root)
+    if show_pattern:
+        cv2.destroyWindow("projector_pattern")
 
     if frame is None:
         return 1
@@ -388,7 +488,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Lens cal via ChArUco on phone/tablet (no printer)",
     )
     p_aruco.add_argument("--config", type=Path, default=Path("config/default.yaml"))
-    p_aruco.add_argument("--camera", type=int, default=0)
+    p_aruco.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Camera index or Pi MJPEG URL",
+    )
     p_aruco.add_argument(
         "--square-mm",
         type=float,
@@ -396,6 +501,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Measure one square on screen with a ruler",
     )
     p_aruco.add_argument("--no-fullscreen", action="store_true")
+    p_aruco.add_argument(
+        "--min-images",
+        type=int,
+        default=12,
+        help="Minimum SPACE captures before finish (default 12)",
+    )
+    p_aruco.add_argument(
+        "--min-corners",
+        type=int,
+        default=15,
+        help="ChArUco corners required to capture (default 15)",
+    )
 
     p_gen = sub.add_parser("aruco-pattern", help="Save ChArUco PNG for phone/tablet")
     p_gen.add_argument("--output", type=Path, default=Path("config/calibration/aruco_charuco.png"))
@@ -415,9 +532,27 @@ def main(argv: list[str] | None = None) -> int:
 
     p_ver = sub.add_parser("verify-lens", help="Show lens.npz stats + before/after image")
     p_ver.add_argument("--config", type=Path, default=Path("config/default.yaml"))
-    p_ver.add_argument("--camera", type=int, default=0)
+    p_ver.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Camera index or Pi MJPEG URL",
+    )
     p_ver.add_argument("--image", type=Path, default=None)
     p_ver.add_argument("--output", type=Path, default=None)
+
+    p_pockets = sub.add_parser(
+        "pockets",
+        help="Click 6 pocket centers on the live frame (saved to pockets.npz)",
+    )
+    p_pockets.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    p_pockets.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Camera index or Pi MJPEG URL",
+    )
+    p_pockets.add_argument("--image", type=Path, default=None)
 
     p_play = sub.add_parser(
         "play-region",
@@ -437,9 +572,39 @@ def main(argv: list[str] | None = None) -> int:
     p_felt.add_argument("--camera", type=int, default=0)
     p_felt.add_argument("--image", type=Path, default=None)
 
-    p_proj = sub.add_parser("projector", help="Projector pixels -> table plane")
+    p_proj = sub.add_parser(
+        "projector",
+        help="Click projected corners in camera view; save projector_homography.npz",
+    )
     p_proj.add_argument("--config", type=Path, default=Path("config/default.yaml"))
-    p_proj.add_argument("--camera", type=int, default=0)
+    p_proj.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Camera index or MJPEG URL (e.g. http://pool.local:8080/stream.mjpg)",
+    )
+    p_proj.add_argument(
+        "--image",
+        type=Path,
+        default=None,
+        help="Snapshot from capture (offline click on Mac)",
+    )
+    p_proj.add_argument(
+        "--no-pattern",
+        action="store_true",
+        help="Pattern already on projector (run projector-pattern on Pi first)",
+    )
+
+    p_proj_pat = sub.add_parser(
+        "projector-pattern",
+        help="Show numbered corner dots on HDMI only (Pi over SSH; pair with projector --no-pattern on Mac)",
+    )
+    p_proj_pat.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    p_proj_pat.add_argument(
+        "--feh",
+        action="store_true",
+        help="Use feh (X11) instead of OpenCV — recommended on Pi when fbi/DRM fails",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "table":
@@ -470,9 +635,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "lens-aruco":
         return calibrate_lens_aruco(
             args.config,
-            args.camera,
+            parse_camera_arg(args.camera),
             square_mm=args.square_mm,
             show_pattern=not args.no_fullscreen,
+            min_images=args.min_images,
+            min_corners=args.min_corners,
         )
     if args.command == "aruco-pattern":
         save_aruco_pattern(args.output, square_mm=args.square_mm)
@@ -484,10 +651,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "verify-lens":
         return verify_lens(
             args.config,
-            args.camera,
+            parse_camera_arg(args.camera),
             image_path=args.image,
             output=args.output,
         )
+    if args.command == "pockets":
+        cam = parse_camera_arg(args.camera)
+        if args.image is not None:
+            cam = 0
+        return calibrate_pockets(args.config, image_path=args.image, camera=cam)
     if args.command == "play-region":
         cam = parse_camera_arg(args.camera)
         if args.image is not None:
@@ -496,7 +668,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "felt-sample":
         return run_felt_sample(args.config, args.camera, args.image)
     if args.command == "projector":
-        return calibrate_projector(args.config, args.camera)
+        cam = parse_camera_arg(args.camera)
+        if args.image is not None:
+            cam = 0
+        return calibrate_projector(
+            args.config,
+            cam,
+            show_pattern=not args.no_pattern,
+            image_path=args.image,
+        )
+    if args.command == "projector-pattern":
+        return show_projector_pattern(args.config, use_feh=args.feh)
     return 1
 
 
