@@ -284,11 +284,35 @@ def calibrate_table(
     return 0
 
 
+def _projector_pattern_corners_px(cfg: dict) -> list[tuple[int, int]]:
+    """
+    Corner target positions in projector pixels (TL, TR, BR, BL).
+
+    Inset from the full frame so dots land on the felt, not on walls/rails.
+    """
+    proj = cfg.get("projector", {})
+    pw = int(proj["display_width"])
+    ph = int(proj["display_height"])
+    if "pattern_margin_px" in proj:
+        m = int(np.clip(int(proj["pattern_margin_px"]), 0, min(pw, ph) // 4))
+        return [(m, m), (pw - 1 - m, m), (pw - 1 - m, ph - 1 - m), (m, ph - 1 - m)]
+
+    frac = float(proj.get("pattern_inset_fraction", 0.12))
+    frac = float(np.clip(frac, 0.02, 0.45))
+    corners = np.array(
+        [[0.0, 0.0], [float(pw - 1), 0.0], [float(pw - 1), float(ph - 1)], [0.0, float(ph - 1)]],
+        dtype=np.float64,
+    )
+    center = np.array([float(pw - 1) / 2.0, float(ph - 1) / 2.0], dtype=np.float64)
+    inset = corners + frac * (center - corners)
+    return [(int(round(p[0])), int(round(p[1]))) for p in inset]
+
+
 def _projector_pattern_canvas(cfg: dict) -> tuple[np.ndarray, list[tuple[int, int]]]:
     """White field, black corner targets, white digits — readable on red felt."""
     pw = int(cfg["projector"]["display_width"])
     ph = int(cfg["projector"]["display_height"])
-    proj_corners_px = [(0, 0), (pw - 1, 0), (pw - 1, ph - 1), (0, ph - 1)]
+    proj_corners_px = _projector_pattern_corners_px(cfg)
     canvas = np.full((ph, pw, 3), 255, dtype=np.uint8)
     dot_r = int(cfg.get("projector", {}).get("pattern_dot_radius_px", 56))
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -324,7 +348,7 @@ def show_projector_pattern(config_path: Path, *, use_feh: bool = False) -> int:
         print("Set DISPLAY=:0 so output goes to HDMI (e.g. export DISPLAY=:0)")
 
     cfg = load_config(config_path)
-    canvas, _ = _projector_pattern_canvas(cfg)
+    canvas, proj_corners_px = _projector_pattern_canvas(cfg)
     tmp = Path(tempfile.gettempdir()) / "pool_fool_projector_pattern.png"
     cv2.imwrite(str(tmp), canvas)
 
@@ -340,7 +364,7 @@ def show_projector_pattern(config_path: Path, *, use_feh: bool = False) -> int:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        print("Projector pattern is on HDMI (4 numbered corner dots).")
+        print(f"Projector pattern on HDMI — corner dots at {proj_corners_px}")
         print("On your Mac: pool-fool-calibrate projector --no-pattern --camera <stream>")
         print("Press ENTER here when finished clicking corners on the Mac...")
         try:
@@ -357,7 +381,7 @@ def show_projector_pattern(config_path: Path, *, use_feh: bool = False) -> int:
     cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     cv2.imshow(window, canvas)
     cv2.waitKey(1)
-    print("Projector pattern is on HDMI (4 numbered corner dots).")
+    print(f"Projector pattern on HDMI — corner dots at {proj_corners_px}")
     print("On your Mac: pool-fool-calibrate projector --no-pattern --camera <stream>")
     print("If the projector stays black, retry with: pool-fool-calibrate projector-pattern --feh")
     print("Press ENTER here when finished clicking corners on the Mac...")

@@ -136,7 +136,7 @@ sudo apt install -y feh   # once
 pool-fool-calibrate projector-pattern --config config/default.yaml --feh
 ```
 
-Pattern is **white background, large black dots, white numbers** (readable on red felt). Tune in config: `projector.pattern_dot_radius_px`, `pattern_font_scale`.
+Pattern is **white background, large black dots, white numbers** (readable on red felt). Dots are **inset** from the projector frame (`pattern_inset_fraction: 0.12` default) so they sit on the felt, not off the rails. Tune: `pattern_inset_fraction` (try `0.15`–`0.20` if still too wide), `pattern_dot_radius_px`, `pattern_font_scale`. Or fixed `pattern_margin_px: 180` instead of fraction.
 
 Use **`HDMI-A-2`** in `xrandr` (not `HDMI-2`). `fbi` often fails while X11 is running — use **`--feh`**.
 

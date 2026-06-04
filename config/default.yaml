@@ -78,6 +78,7 @@ cameras:
 projector:
   display_width: 1920
   display_height: 1080
-  pattern_dot_radius_px: 200   # calibration targets on red felt
+  pattern_inset_fraction: 0.12  # pull dots toward center (try 0.15–0.20 if still off rails)
+  pattern_dot_radius_px: 56     # calibration targets on red felt
   pattern_font_scale: 2.0
   pattern_font_thickness: 4

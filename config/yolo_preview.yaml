@@ -105,6 +105,7 @@ cameras:
 projector:
   display_width: 1920
   display_height: 1080
+  pattern_inset_fraction: 0.12
   pattern_dot_radius_px: 56
   pattern_font_scale: 2.0
   pattern_font_thickness: 4
